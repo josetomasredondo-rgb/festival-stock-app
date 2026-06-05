@@ -241,7 +241,7 @@ function UserCard({ appUser, bars, festivals, onUpdate, onDelete }) {
   );
 
   const save = async () => {
-    await onUpdate(appUser.id, form, assignedFestivalIds);
+    await onUpdate(appUser.id, { ...form, bar_id: form.bar_id || null }, assignedFestivalIds);
     setEditing(false);
   };
 
@@ -517,7 +517,7 @@ export default function GlobalSettings() {
   // ── Users ─────────────────────────────────────────────────────────────────
   const addUser = async () => {
     if (!newUser.name.trim() || !newUser.pin.trim()) return;
-    const created = await db.AppUser.create(newUser);
+    const created = await db.AppUser.create({ ...newUser, bar_id: newUser.bar_id || null });
     if (created) {
       setUsers(prev => [created, ...prev]);
       // Add this new user to selected festivals
