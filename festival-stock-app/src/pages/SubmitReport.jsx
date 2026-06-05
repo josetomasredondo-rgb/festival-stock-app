@@ -2,19 +2,25 @@ import { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
 import { ChevronLeft, Loader2, Plus, Trash2, CheckCircle } from "lucide-react";
 import db from "../lib/db";
-import { useAuth } from "../lib/AuthContext";
+import { useAuth, useFestivalSettings } from "../lib/AuthContext";
 
-const ALL_REPORT_TYPES = [
-  { value: "opening", label: "Contagem de Abertura", desc: "Stock inicial no início do dia (preenchido automaticamente do dia anterior)", color: "border-blue-400 bg-blue-50 text-blue-800" },
-  { value: "delivery", label: "Entrega Recebida", desc: "Novo stock chegou durante o dia", color: "border-amber-400 bg-amber-50 text-amber-800" },
-  { value: "night_delivery", label: "Entrega Noturna", desc: "Stock entregue durante a noite entre dias", color: "border-indigo-400 bg-indigo-50 text-indigo-800" },
-  { value: "closing", label: "Contagem de Fecho", desc: "Stock final no fim do dia", color: "border-emerald-400 bg-emerald-50 text-emerald-800" },
-];
-
-const DAY_ORDER = ["Day 1", "Day 2", "Day 3", "Day 4", "Day 5"];
+const REPORT_TYPE_COLORS = {
+  opening: "border-blue-400 bg-blue-50 text-blue-800",
+  delivery: "border-amber-400 bg-amber-50 text-amber-800",
+  night_delivery: "border-indigo-400 bg-indigo-50 text-indigo-800",
+  closing: "border-emerald-400 bg-emerald-50 text-emerald-800",
+};
+const REPORT_TYPE_DESCS = {
+  opening: "Stock inicial no início do dia (preenchido automaticamente do dia anterior)",
+  delivery: "Novo stock chegou durante o dia",
+  night_delivery: "Stock entregue durante a noite entre dias",
+  closing: "Stock final no fim do dia",
+};
 
 export default function SubmitReport() {
   const { role, user, currentFestival } = useAuth();
+  const { dayNames, reportTypeLabels } = useFestivalSettings();
+  const DAY_ORDER = dayNames;
   const [bars, setBars] = useState([]);
   const [products, setProducts] = useState([]);
   const [allReports, setAllReports] = useState([]);
@@ -31,7 +37,9 @@ export default function SubmitReport() {
   const isBarLeader = role === "bar_leader";
   const isNightDelivery = role === "night_delivery";
 
-  // night_delivery can only submit night_delivery reports
+  const ALL_REPORT_TYPES = Object.entries(reportTypeLabels).map(([value, label]) => ({
+    value, label, desc: REPORT_TYPE_DESCS[value], color: REPORT_TYPE_COLORS[value],
+  }));
   const REPORT_TYPES = isNightDelivery
     ? ALL_REPORT_TYPES.filter(t => t.value === "night_delivery")
     : ALL_REPORT_TYPES;

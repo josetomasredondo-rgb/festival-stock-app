@@ -2,17 +2,16 @@ import { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
 import { ChevronLeft, Loader2, Pencil, Trash2, Plus, Check } from "lucide-react";
 import db from "../lib/db";
-import { useAuth } from "../lib/AuthContext";
+import { useAuth, useFestivalSettings } from "../lib/AuthContext";
 
-const DAYS = ["Day 1", "Day 2", "Day 3", "Day 4", "Day 5"];
-const REPORT_TYPES = [
-  { value: "opening", label: "Abertura", color: "bg-blue-100 text-blue-700" },
-  { value: "delivery", label: "Entrega", color: "bg-amber-100 text-amber-700" },
-  { value: "night_delivery", label: "Entrega Noturna", color: "bg-indigo-100 text-indigo-700" },
-  { value: "closing", label: "Fecho", color: "bg-emerald-100 text-emerald-700" },
-];
+const REPORT_TYPE_COLORS = {
+  opening: "bg-blue-100 text-blue-700",
+  delivery: "bg-amber-100 text-amber-700",
+  night_delivery: "bg-indigo-100 text-indigo-700",
+  closing: "bg-emerald-100 text-emerald-700",
+};
 
-function EditModal({ report, bars, products, onSave, onClose }) {
+function EditModal({ report, bars, products, days, reportTypes, onSave, onClose }) {
   const [form, setForm] = useState({ ...report, items: report.items ? [...report.items] : [] });
   const [saving, setSaving] = useState(false);
 
@@ -55,14 +54,14 @@ function EditModal({ report, bars, products, onSave, onClose }) {
               <label className="block text-xs font-semibold uppercase tracking-widest text-neutral-400 mb-2">Tipo</label>
               <select value={form.report_type} onChange={e => setForm(f => ({ ...f, report_type: e.target.value }))}
                 className="w-full border border-neutral-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-neutral-900 bg-white">
-                {REPORT_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
+                {reportTypes.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
               </select>
             </div>
             <div>
               <label className="block text-xs font-semibold uppercase tracking-widest text-neutral-400 mb-2">Dia do Festival</label>
               <select value={form.festival_day} onChange={e => setForm(f => ({ ...f, festival_day: e.target.value }))}
                 className="w-full border border-neutral-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-neutral-900 bg-white">
-                {DAYS.map(d => <option key={d}>{d}</option>)}
+                {days.map(d => <option key={d}>{d}</option>)}
               </select>
             </div>
             <div>
@@ -126,6 +125,11 @@ function EditModal({ report, bars, products, onSave, onClose }) {
 
 export default function Reports() {
   const { currentFestival } = useAuth();
+  const { dayNames, reportTypeLabels } = useFestivalSettings();
+  const DAYS = dayNames;
+  const REPORT_TYPES = Object.entries(reportTypeLabels).map(([value, label]) => ({
+    value, label, color: REPORT_TYPE_COLORS[value] || "bg-neutral-100 text-neutral-600",
+  }));
   const [reports, setReports] = useState([]);
   const [bars, setBars] = useState([]);
   const [products, setProducts] = useState([]);
@@ -245,7 +249,7 @@ export default function Reports() {
           </div>
         )}
       </div>
-      {editingReport && <EditModal report={editingReport} bars={bars} products={products} onSave={handleSaved} onClose={() => setEditingReport(null)} />}
+      {editingReport && <EditModal report={editingReport} bars={bars} products={products} days={DAYS} reportTypes={REPORT_TYPES} onSave={handleSaved} onClose={() => setEditingReport(null)} />}
     </div>
   );
 }

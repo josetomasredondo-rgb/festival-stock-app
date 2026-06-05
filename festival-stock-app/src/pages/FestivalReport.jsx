@@ -2,12 +2,12 @@ import { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
 import { ChevronLeft, Download } from "lucide-react";
 import db from "../lib/db";
-import { useAuth } from "../lib/AuthContext";
-
-const DAYS = ["Day 1", "Day 2", "Day 3", "Day 4", "Day 5"];
+import { useAuth, useFestivalSettings } from "../lib/AuthContext";
 
 export default function FestivalReport() {
   const { currentFestival } = useAuth();
+  const { dayNames, reportTypeLabels } = useFestivalSettings();
+  const DAYS = dayNames;
   const [bars, setBars] = useState([]);
   const [reports, setReports] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -126,9 +126,9 @@ export default function FestivalReport() {
                             <thead>
                               <tr className="border-t border-neutral-50">
                                 <th className="text-left px-6 py-2 text-xs font-semibold text-neutral-400">Produto</th>
-                                <th className="text-center px-4 py-2 text-xs font-semibold text-blue-400">Abertura</th>
-                                <th className="text-center px-4 py-2 text-xs font-semibold text-amber-400">Entrega</th>
-                                <th className="text-center px-4 py-2 text-xs font-semibold text-emerald-400">Fecho</th>
+                                <th className="text-center px-4 py-2 text-xs font-semibold text-blue-400">{reportTypeLabels.opening}</th>
+                                <th className="text-center px-4 py-2 text-xs font-semibold text-amber-400">{reportTypeLabels.delivery}</th>
+                                <th className="text-center px-4 py-2 text-xs font-semibold text-emerald-400">{reportTypeLabels.closing}</th>
                                 <th className="text-center px-4 py-2 text-xs font-semibold text-neutral-400">Consumido</th>
                                 <th className="text-left px-4 py-2 text-xs font-semibold text-neutral-400">Unid.</th>
                               </tr>

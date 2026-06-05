@@ -13,8 +13,35 @@ export const ROLE_ACCESS = {
   bar_leader: ["Dashboard", "SubmitReport", "DailySheet"],
   night_delivery: ["Dashboard", "SubmitReport", "DailySheet"],
   event_coordinator: ["Dashboard", "SubmitReport", "DailySheet", "Reports", "FestivalReport", "Setup"],
-  manager: ["Dashboard", "SubmitReport", "DailySheet", "Reports", "FestivalReport", "Setup", "Financials"],
+  manager: ["Dashboard", "SubmitReport", "DailySheet", "Reports", "FestivalReport", "Setup"],
 };
+
+export const DEFAULT_SETTINGS = {
+  num_days: 5,
+  day_names: ["Dia 1", "Dia 2", "Dia 3", "Dia 4", "Dia 5"],
+  report_type_labels: {
+    opening: "Contagem de Abertura",
+    delivery: "Entrega Recebida",
+    night_delivery: "Entrega Noturna",
+    closing: "Contagem de Fecho",
+  },
+};
+
+export function useFestivalSettings() {
+  const { currentFestival } = useContext(AuthContext);
+  const s = currentFestival?.settings || {};
+  const numDays = s.num_days || DEFAULT_SETTINGS.num_days;
+  const dayNames = Array.from({ length: numDays }, (_, i) =>
+    s.day_names?.[i] || DEFAULT_SETTINGS.day_names[i] || `Dia ${i + 1}`
+  );
+  const reportTypeLabels = {
+    opening: s.report_type_labels?.opening || DEFAULT_SETTINGS.report_type_labels.opening,
+    delivery: s.report_type_labels?.delivery || DEFAULT_SETTINGS.report_type_labels.delivery,
+    night_delivery: s.report_type_labels?.night_delivery || DEFAULT_SETTINGS.report_type_labels.night_delivery,
+    closing: s.report_type_labels?.closing || DEFAULT_SETTINGS.report_type_labels.closing,
+  };
+  return { numDays, dayNames, reportTypeLabels };
+}
 
 function readSession(key) {
   try { return JSON.parse(sessionStorage.getItem(key)); } catch { return null; }

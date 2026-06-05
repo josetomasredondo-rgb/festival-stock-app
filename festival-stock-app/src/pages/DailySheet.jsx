@@ -2,9 +2,8 @@ import { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
 import { ChevronLeft, Loader2, ChevronDown, ChevronUp, AlertTriangle } from "lucide-react";
 import db from "../lib/db";
-import { useAuth } from "../lib/AuthContext";
+import { useAuth, useFestivalSettings } from "../lib/AuthContext";
 
-const TYPE_LABEL = { opening: "Abertura", delivery: "Entrega", night_delivery: "Entrega Noturna", closing: "Fecho" };
 const TYPE_COLOR = {
   opening: "bg-blue-100 text-blue-700",
   delivery: "bg-amber-100 text-amber-700",
@@ -14,14 +13,26 @@ const TYPE_COLOR = {
 
 export default function DailySheet() {
   const { role, user, currentFestival } = useAuth();
+  const { dayNames, reportTypeLabels } = useFestivalSettings();
   const [bars, setBars] = useState([]);
   const [reports, setReports] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [selectedDay, setSelectedDay] = useState("Day 1");
+  const [selectedDay, setSelectedDay] = useState(null);
   const [expandedBars, setExpandedBars] = useState({});
-  const days = ["Day 1", "Day 2", "Day 3", "Day 4", "Day 5"];
+  const days = dayNames;
+  const TYPE_LABEL = {
+    opening: reportTypeLabels.opening,
+    delivery: reportTypeLabels.delivery,
+    night_delivery: reportTypeLabels.night_delivery,
+    closing: reportTypeLabels.closing,
+  };
 
   const festivalId = currentFestival?.id;
+  const activeDay = selectedDay || days[0] || "Dia 1";
+
+  useEffect(() => {
+    if (!selectedDay && days.length) setSelectedDay(days[0]);
+  }, [days.join(",")]);
 
   useEffect(() => {
     if (!festivalId) { setLoading(false); return; }
@@ -40,7 +51,7 @@ export default function DailySheet() {
     });
   }, [festivalId]);
 
-  const dayReports = reports.filter(r => r.festival_day === selectedDay);
+  const dayReports = reports.filter(r => r.festival_day === activeDay);
 
   const barData = bars.map(bar => {
     const barReports = dayReports.filter(r => r.bar_id === bar.id);
@@ -89,7 +100,7 @@ export default function DailySheet() {
           <div className="flex gap-2">
             {days.map(d => (
               <button key={d} onClick={() => setSelectedDay(d)}
-                className={`px-4 py-2 rounded-xl text-sm font-medium transition-all ${selectedDay === d ? "bg-neutral-900 text-white" : "bg-white border border-neutral-200 text-neutral-600 hover:border-neutral-400"}`}>
+                className={`px-4 py-2 rounded-xl text-sm font-medium transition-all ${activeDay === d ? "bg-neutral-900 text-white" : "bg-white border border-neutral-200 text-neutral-600 hover:border-neutral-400"}`}>
                 {d}
               </button>
             ))}

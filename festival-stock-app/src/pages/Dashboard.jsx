@@ -1,11 +1,12 @@
 import { useState, useEffect } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { BarChart2, ClipboardList, Package, ArrowRight, Lock, FileText, DollarSign } from "lucide-react";
+import { BarChart2, ClipboardList, Package, ArrowRight, Lock, FileText } from "lucide-react";
 import db from "../lib/db";
-import { useAuth, ROLE_ACCESS } from "../lib/AuthContext";
+import { useAuth, ROLE_ACCESS, useFestivalSettings } from "../lib/AuthContext";
 
 export default function Dashboard() {
-  const { role, user, currentFestival } = useAuth();
+  const { role, currentFestival } = useAuth();
+  const { reportTypeLabels } = useFestivalSettings();
   const navigate = useNavigate();
   const [bars, setBars] = useState([]);
   const [reports, setReports] = useState([]);
@@ -27,7 +28,6 @@ export default function Dashboard() {
   }, [festivalId]);
 
   const allowed = ROLE_ACCESS[role] || [];
-
   const today = new Date().toISOString().split("T")[0];
   const todayReports = reports.filter(r => r.report_date === today);
 
@@ -37,10 +37,11 @@ export default function Dashboard() {
     { key: "Setup", title: "Gerir Bares e Produtos", description: "Configurar bares, responsáveis e catálogo de produtos", icon: Package, color: "from-orange-500 to-amber-500", light: "bg-orange-50 text-orange-700" },
     { key: "FestivalReport", title: "Relatório Final", description: "Ver o resumo completo do festival em todos os bares e dias", icon: FileText, color: "from-slate-600 to-slate-800", light: "bg-slate-100 text-slate-700" },
     { key: "Reports", title: "Ver e Editar Relatórios", description: "Ver, filtrar e editar qualquer relatório de stock submetido", icon: ClipboardList, color: "from-rose-500 to-pink-600", light: "bg-rose-50 text-rose-700" },
-    { key: "Financials", title: "Financeiros", description: "Estimativas de receita, preços de produtos e controlo de desperdício/oferta", icon: DollarSign, color: "from-emerald-500 to-green-600", light: "bg-emerald-50 text-emerald-700" },
   ];
 
   const cards = allCards.filter(c => allowed.includes(c.key));
+
+  const typeColors = { opening: "bg-blue-100 text-blue-700", delivery: "bg-amber-100 text-amber-700", night_delivery: "bg-indigo-100 text-indigo-700", closing: "bg-emerald-100 text-emerald-700" };
 
   return (
     <div className="min-h-screen bg-[#F7F7F5]">
@@ -110,21 +111,17 @@ export default function Dashboard() {
           <div>
             <h2 className="text-xs font-semibold uppercase tracking-widest text-neutral-400 mb-4">Relatórios Recentes</h2>
             <div className="bg-white rounded-2xl border border-neutral-100 shadow-sm overflow-hidden">
-              {reports.slice(0, 5).map((r, i) => {
-                const typeColors = { opening: "bg-blue-100 text-blue-700", delivery: "bg-amber-100 text-amber-700", night_delivery: "bg-indigo-100 text-indigo-700", closing: "bg-emerald-100 text-emerald-700" };
-                const typeLabels = { opening: "Abertura", delivery: "Entrega", night_delivery: "Entrega Noturna", closing: "Fecho" };
-                return (
-                  <div key={r.id} className={`flex items-center gap-4 px-6 py-4 ${i < Math.min(reports.length, 5) - 1 ? "border-b border-neutral-50" : ""}`}>
-                    <span className={`text-xs font-medium px-2 py-0.5 rounded-full shrink-0 ${typeColors[r.report_type] || "bg-neutral-100 text-neutral-600"}`}>
-                      {typeLabels[r.report_type] || r.report_type}
-                    </span>
-                    <div className="min-w-0 flex-1">
-                      <div className="font-medium text-neutral-900 truncate">{r.bar_name}</div>
-                      <div className="text-xs text-neutral-400">{r.festival_day} · {r.report_date}{r.submitted_by ? ` · por ${r.submitted_by}` : ""}</div>
-                    </div>
+              {reports.slice(0, 5).map((r, i) => (
+                <div key={r.id} className={`flex items-center gap-4 px-6 py-4 ${i < Math.min(reports.length, 5) - 1 ? "border-b border-neutral-50" : ""}`}>
+                  <span className={`text-xs font-medium px-2 py-0.5 rounded-full shrink-0 ${typeColors[r.report_type] || "bg-neutral-100 text-neutral-600"}`}>
+                    {reportTypeLabels[r.report_type] || r.report_type}
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <div className="font-medium text-neutral-900 truncate">{r.bar_name}</div>
+                    <div className="text-xs text-neutral-400">{r.festival_day} · {r.report_date}{r.submitted_by ? ` · por ${r.submitted_by}` : ""}</div>
                   </div>
-                );
-              })}
+                </div>
+              ))}
             </div>
           </div>
         )}

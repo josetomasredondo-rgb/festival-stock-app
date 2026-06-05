@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
 import { ChevronLeft, Plus, Trash2, Pencil, Check, X, Loader2 } from "lucide-react";
 import db from "../lib/db";
-import { useAuth, ROLE_LABELS } from "../lib/AuthContext";
+import { useAuth, ROLE_LABELS, useFestivalSettings, DEFAULT_SETTINGS } from "../lib/AuthContext";
 
 // ── Bar card ────────────────────────────────────────────────────────────────
 function BarCard({ bar, onUpdate, onDelete }) {
@@ -166,11 +166,11 @@ function UserCard({ appUser, bars, festivals, onUpdate, onDelete }) {
 }
 
 // ── Main Setup ────────────────────────────────────────────────────────────────
-const TABS = ["bars", "products", "users", "festivals"];
-const TAB_LABELS = { bars: "Bares", products: "Produtos", users: "Utilizadores", festivals: "Festivais" };
+const TABS = ["bars", "products", "users", "festivals", "settings"];
+const TAB_LABELS = { bars: "Bares", products: "Produtos", users: "Utilizadores", festivals: "Festivais", settings: "Configurações" };
 
 export default function Setup() {
-  const { role, currentFestival } = useAuth();
+  const { role, currentFestival, setCurrentFestival } = useAuth();
   const [tab, setTab] = useState("bars");
   const [bars, setBars] = useState([]);
   const [allBars, setAllBars] = useState([]); // all bars across festivals for user assignment
@@ -187,6 +187,8 @@ export default function Setup() {
   const [newProduct, setNewProduct] = useState({ name: "", unit: "units", category: "other", selling_price: "" });
   const [newUser, setNewUser] = useState({ name: "", pin: "", role: "bar_leader", festival_ids: [], bar_id: "" });
   const [newFestival, setNewFestival] = useState({ name: "", start_date: "", end_date: "" });
+  const [settingsForm, setSettingsForm] = useState(null);
+  const [savingSettings, setSavingSettings] = useState(false);
 
   useEffect(() => {
     const loads = [db.Product.list(), db.Festival.list(), db.AppUser.list(), db.Bar.list()];
@@ -196,6 +198,13 @@ export default function Setup() {
       : [Promise.resolve([]), db.Product.list(), db.Festival.list(), db.AppUser.list(), db.Bar.list()]
     ).then(([fb, p, fests, users, ab]) => {
       setBars(fb); setProducts(p); setFestivals(fests); setAppUsers(users); setAllBars(ab); setLoading(false);
+      const s = currentFestival?.settings || {};
+      const numDays = s.num_days || DEFAULT_SETTINGS.num_days;
+      setSettingsForm({
+        num_days: numDays,
+        day_names: Array.from({ length: numDays }, (_, i) => s.day_names?.[i] || DEFAULT_SETTINGS.day_names[i] || `Dia ${i + 1}`),
+        report_type_labels: { ...DEFAULT_SETTINGS.report_type_labels, ...(s.report_type_labels || {}) },
+      });
     });
   }, [festivalId]);
 
@@ -267,7 +276,24 @@ export default function Setup() {
     setFestivals(prev => prev.map(f => f.id === id ? { ...f, is_closed: false, is_active: true } : f));
   };
 
-  const visibleTabs = isManager ? TABS : TABS.filter(t => t !== "users" && t !== "festivals");
+  const handleNumDaysChange = (n) => {
+    const num = Math.max(1, Math.min(10, Number(n)));
+    setSettingsForm(f => ({
+      ...f,
+      num_days: num,
+      day_names: Array.from({ length: num }, (_, i) => f.day_names[i] || `Dia ${i + 1}`),
+    }));
+  };
+
+  const handleSaveSettings = async () => {
+    if (!festivalId || !settingsForm) return;
+    setSavingSettings(true);
+    const updated = await db.Festival.update(festivalId, { settings: settingsForm });
+    if (updated) setCurrentFestival(updated);
+    setSavingSettings(false);
+  };
+
+  const visibleTabs = isManager ? TABS : TABS.filter(t => !["users", "festivals", "settings"].includes(t));
 
   return (
     <div className="min-h-screen bg-[#F7F7F5]">
@@ -456,6 +482,86 @@ export default function Setup() {
                   ))}
                   {festivals.length === 0 && <div className="text-center py-10 text-neutral-300 text-sm">Nenhum festival criado ainda</div>}
                 </div>
+              </div>
+            )}
+
+            {/* ── Settings tab (manager only) ── */}
+            {tab === "settings" && isManager && settingsForm && (
+              <div className="space-y-6">
+                {!festivalId && (
+                  <p className="text-sm text-amber-600">Seleciona um festival primeiro para configurar as suas definições.</p>
+                )}
+
+                {/* Number of days */}
+                <div className="bg-white rounded-2xl border border-neutral-100 p-5 shadow-sm">
+                  <div className="text-xs font-semibold uppercase tracking-widest text-neutral-400 mb-3">Número de Dias do Festival</div>
+                  <div className="flex items-center gap-3">
+                    <input
+                      type="number" min={1} max={10}
+                      value={settingsForm.num_days}
+                      onChange={e => handleNumDaysChange(e.target.value)}
+                      className="w-24 border border-neutral-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-neutral-900 text-center"
+                    />
+                    <span className="text-sm text-neutral-400">dias (máx. 10)</span>
+                  </div>
+                </div>
+
+                {/* Day names */}
+                <div className="bg-white rounded-2xl border border-neutral-100 p-5 shadow-sm">
+                  <div className="text-xs font-semibold uppercase tracking-widest text-neutral-400 mb-3">Nomes dos Dias</div>
+                  <div className="space-y-2">
+                    {settingsForm.day_names.map((name, i) => (
+                      <div key={i} className="flex items-center gap-3">
+                        <span className="text-xs text-neutral-400 w-12 shrink-0">Dia {i + 1}</span>
+                        <input
+                          type="text"
+                          value={name}
+                          onChange={e => setSettingsForm(f => {
+                            const day_names = [...f.day_names];
+                            day_names[i] = e.target.value;
+                            return { ...f, day_names };
+                          })}
+                          className="flex-1 border border-neutral-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-neutral-900"
+                          placeholder={`Dia ${i + 1}`}
+                        />
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Report type labels */}
+                <div className="bg-white rounded-2xl border border-neutral-100 p-5 shadow-sm">
+                  <div className="text-xs font-semibold uppercase tracking-widest text-neutral-400 mb-3">Nomes dos Tipos de Relatório</div>
+                  <div className="space-y-2">
+                    {[
+                      { key: "opening", hint: "Abertura" },
+                      { key: "delivery", hint: "Entrega" },
+                      { key: "night_delivery", hint: "Entrega Noturna" },
+                      { key: "closing", hint: "Fecho" },
+                    ].map(({ key, hint }) => (
+                      <div key={key} className="flex items-center gap-3">
+                        <span className="text-xs text-neutral-400 w-32 shrink-0">{hint}</span>
+                        <input
+                          type="text"
+                          value={settingsForm.report_type_labels[key]}
+                          onChange={e => setSettingsForm(f => ({
+                            ...f,
+                            report_type_labels: { ...f.report_type_labels, [key]: e.target.value },
+                          }))}
+                          className="flex-1 border border-neutral-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-neutral-900"
+                        />
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <button
+                  onClick={handleSaveSettings}
+                  disabled={savingSettings || !festivalId}
+                  className="w-full py-3 bg-neutral-900 text-white rounded-xl font-semibold text-sm hover:bg-neutral-700 transition-colors disabled:opacity-40 flex items-center justify-center gap-2"
+                >
+                  {savingSettings ? <><Loader2 className="w-4 h-4 animate-spin" /> A guardar...</> : <><Check className="w-4 h-4" /> Guardar Configurações</>}
+                </button>
               </div>
             )}
           </>

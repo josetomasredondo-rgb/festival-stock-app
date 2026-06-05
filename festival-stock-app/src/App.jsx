@@ -9,10 +9,9 @@ import DailySheet from "./pages/DailySheet";
 import Reports from "./pages/Reports";
 import FestivalReport from "./pages/FestivalReport";
 import Setup from "./pages/Setup";
-import Financials from "./pages/Financials";
 
 const ALL_PAGES = {
-  Dashboard, SubmitReport, DailySheet, Reports, FestivalReport, Setup, Financials
+  Dashboard, SubmitReport, DailySheet, Reports, FestivalReport, Setup
 };
 
 function AppRoutes() {
