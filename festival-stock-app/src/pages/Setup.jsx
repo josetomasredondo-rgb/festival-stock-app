@@ -1,8 +1,8 @@
 import { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
-import { ChevronLeft, Plus, Trash2, Check, Loader2, X } from "lucide-react";
+import { ChevronLeft, Plus, Check, Loader2, X } from "lucide-react";
 import db, { getFestivalBars, getFestivalProducts } from "../lib/db";
-import { useAuth, useFestivalSettings, DEFAULT_SETTINGS } from "../lib/AuthContext";
+import { useAuth } from "../lib/AuthContext";
 
 // ── Bar card ──────────────────────────────────────────────────────────────────
 function BarItem({ bar, canRemove, onRemove }) {
@@ -43,8 +43,8 @@ function ProductItem({ product, canRemove, onRemove }) {
 }
 
 // ── Main Setup ────────────────────────────────────────────────────────────────
-const TABS = ["bars", "products", "settings"];
-const TAB_LABELS = { bars: "Bares", products: "Produtos", settings: "Configurações" };
+const TABS = ["bars", "products"];
+const TAB_LABELS = { bars: "Bares", products: "Produtos" };
 
 export default function Setup() {
   const { role, currentFestival, setCurrentFestival } = useAuth();
@@ -61,7 +61,6 @@ export default function Setup() {
 
   const festivalId = currentFestival?.id;
   const canEdit = role === "manager" || role === "event_coordinator";
-  const isManager = role === "manager";
 
   // New bar form
   const [showNewBar, setShowNewBar] = useState(false);
@@ -73,9 +72,6 @@ export default function Setup() {
   const [newProduct, setNewProduct] = useState({ name: "", unit: "units", category: "other", selling_price: "" });
   const [savingProduct, setSavingProduct] = useState(false);
 
-  // Report type labels form (manager only)
-  const [labelsForm, setLabelsForm] = useState(null);
-  const [savingLabels, setSavingLabels] = useState(false);
 
   useEffect(() => {
     if (!festivalId) { setLoading(false); return; }
@@ -89,8 +85,6 @@ export default function Setup() {
       setLoading(false);
     });
 
-    const s = currentFestival?.settings || {};
-    setLabelsForm({ ...DEFAULT_SETTINGS.report_type_labels, ...(s.report_type_labels || {}) });
   }, [festivalId]);
 
   // ── Helpers: update festival's bar_ids / product_ids ──────────────────────
@@ -160,21 +154,12 @@ export default function Setup() {
     setSavingProduct(false);
   };
 
-  const handleSaveLabels = async () => {
-    setSavingLabels(true);
-    const updated = await db.Festival.update(festivalId, {
-      settings: { ...(currentFestival?.settings || {}), report_type_labels: labelsForm }
-    });
-    if (updated) setCurrentFestival(updated);
-    setSavingLabels(false);
-  };
-
   const assignedBarIds = bars.map(b => b.id);
   const assignedProductIds = products.map(p => p.id);
   const unassignedBars = allBars.filter(b => !assignedBarIds.includes(b.id));
   const unassignedProducts = allProducts.filter(p => !assignedProductIds.includes(p.id));
 
-  const visibleTabs = isManager ? TABS : TABS.filter(t => t !== "settings");
+  const visibleTabs = TABS;
 
   return (
     <div className="min-h-screen bg-[#F7F7F5]">
@@ -331,33 +316,6 @@ export default function Setup() {
               </div>
             )}
 
-            {/* ── Configurações (manager only) ── */}
-            {tab === "settings" && isManager && labelsForm && (
-              <div className="space-y-6">
-                <div className="bg-white rounded-2xl border border-neutral-100 p-5 shadow-sm">
-                  <div className="text-xs font-semibold uppercase tracking-widest text-neutral-400 mb-3">Nomes dos Tipos de Relatório</div>
-                  <div className="space-y-2">
-                    {[
-                      { key: "opening", hint: "Abertura" },
-                      { key: "delivery", hint: "Entrega" },
-                      { key: "night_delivery", hint: "Entrega Noturna" },
-                      { key: "closing", hint: "Fecho" },
-                    ].map(({ key, hint }) => (
-                      <div key={key} className="flex items-center gap-3">
-                        <span className="text-xs text-neutral-400 w-32 shrink-0">{hint}</span>
-                        <input type="text" value={labelsForm[key]}
-                          onChange={e => setLabelsForm(f => ({ ...f, [key]: e.target.value }))}
-                          className="flex-1 border border-neutral-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-neutral-900" />
-                      </div>
-                    ))}
-                  </div>
-                </div>
-                <button onClick={handleSaveLabels} disabled={savingLabels}
-                  className="w-full py-3 bg-neutral-900 text-white rounded-xl font-semibold text-sm hover:bg-neutral-700 transition-colors disabled:opacity-40 flex items-center justify-center gap-2">
-                  {savingLabels ? <><Loader2 className="w-4 h-4 animate-spin" /> A guardar...</> : <><Check className="w-4 h-4" /> Guardar Configurações</>}
-                </button>
-              </div>
-            )}
           </>
         )}
       </div>
