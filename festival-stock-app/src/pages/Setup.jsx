@@ -87,39 +87,48 @@ export default function Setup() {
 
   }, [festivalId]);
 
-  // ── Helpers: update festival's bar_ids / product_ids ──────────────────────
-  const assignBar = async (barId) => {
-    const newIds = [...(currentFestival.bar_ids || []), barId];
-    const updated = await db.Festival.update(festivalId, { bar_ids: newIds });
+  // ── Always fetch fresh festival from DB to avoid stale closure ──────────────
+  const getFreshIds = async (field) => {
+    const fresh = await db.Festival.get(festivalId);
+    return fresh?.[field] || [];
+  };
+
+  // ── Assign / remove bar ───────────────────────────────────────────────────
+  const assignBar = async (barId, barObj) => {
+    const currentIds = await getFreshIds("bar_ids");
+    if (currentIds.includes(barId)) return;
+    const updated = await db.Festival.update(festivalId, { bar_ids: [...currentIds, barId] });
     if (updated) {
       setCurrentFestival(updated);
-      const bar = allBars.find(b => b.id === barId);
+      const bar = barObj || allBars.find(b => b.id === barId);
       if (bar) setBars(prev => [...prev, bar]);
     }
   };
 
   const removeBar = async (barId) => {
-    const newIds = (currentFestival.bar_ids || []).filter(id => id !== barId);
-    const updated = await db.Festival.update(festivalId, { bar_ids: newIds });
+    const currentIds = await getFreshIds("bar_ids");
+    const updated = await db.Festival.update(festivalId, { bar_ids: currentIds.filter(id => id !== barId) });
     if (updated) {
       setCurrentFestival(updated);
       setBars(prev => prev.filter(b => b.id !== barId));
     }
   };
 
-  const assignProduct = async (productId) => {
-    const newIds = [...(currentFestival.product_ids || []), productId];
-    const updated = await db.Festival.update(festivalId, { product_ids: newIds });
+  // ── Assign / remove product ───────────────────────────────────────────────
+  const assignProduct = async (productId, productObj) => {
+    const currentIds = await getFreshIds("product_ids");
+    if (currentIds.includes(productId)) return;
+    const updated = await db.Festival.update(festivalId, { product_ids: [...currentIds, productId] });
     if (updated) {
       setCurrentFestival(updated);
-      const product = allProducts.find(p => p.id === productId);
+      const product = productObj || allProducts.find(p => p.id === productId);
       if (product) setProducts(prev => [...prev, product]);
     }
   };
 
   const removeProduct = async (productId) => {
-    const newIds = (currentFestival.product_ids || []).filter(id => id !== productId);
-    const updated = await db.Festival.update(festivalId, { product_ids: newIds });
+    const currentIds = await getFreshIds("product_ids");
+    const updated = await db.Festival.update(festivalId, { product_ids: currentIds.filter(id => id !== productId) });
     if (updated) {
       setCurrentFestival(updated);
       setProducts(prev => prev.filter(p => p.id !== productId));
@@ -133,7 +142,7 @@ export default function Setup() {
     const created = await db.Bar.create({ ...newBar, is_active: true });
     if (created) {
       setAllBars(prev => [created, ...prev]);
-      await assignBar(created.id);
+      await assignBar(created.id, created); // pass created directly — avoids stale state lookup
       setNewBar({ name: "", leader_name: "", leader_email: "", location: "" });
       setShowNewBar(false);
     }
@@ -147,7 +156,7 @@ export default function Setup() {
     const created = await db.Product.create({ ...newProduct, selling_price: parseFloat(newProduct.selling_price) || 0 });
     if (created) {
       setAllProducts(prev => [created, ...prev]);
-      await assignProduct(created.id);
+      await assignProduct(created.id, created);
       setNewProduct({ name: "", unit: "units", category: "other", selling_price: "" });
       setShowNewProduct(false);
     }
