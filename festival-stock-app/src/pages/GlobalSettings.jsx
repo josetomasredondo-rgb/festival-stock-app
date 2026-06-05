@@ -54,10 +54,20 @@ function MultiSelect({ label, options, selectedIds, onAdd, onRemove, color, getL
 // ── Festival form (create + edit) ─────────────────────────────────────────────
 function FestivalForm({ bars, products, users, onSave, onCancel, initial, saving }) {
   const blank = { name: "", start_date: "", end_date: "", num_days: 1, day_names: ["Dia 1"], bar_ids: [], product_ids: [], user_ids: [] };
-  const [form, setForm] = useState(initial ? {
-    ...blank, ...initial,
-    day_names: initial.day_names?.length ? initial.day_names : Array.from({ length: initial.num_days || 1 }, (_, i) => `Dia ${i + 1}`),
-  } : blank);
+  const [form, setForm] = useState(() => {
+    if (!initial) return blank;
+    // Guard against null arrays returned by Supabase for existing rows
+    return {
+      ...blank,
+      ...initial,
+      bar_ids: initial.bar_ids || [],
+      product_ids: initial.product_ids || [],
+      user_ids: initial.user_ids || [],
+      day_names: initial.day_names?.length
+        ? initial.day_names
+        : Array.from({ length: initial.num_days || 1 }, (_, i) => `Dia ${i + 1}`),
+    };
+  });
 
   const handleNumDays = (n) => {
     const num = Math.max(1, Math.min(15, Number(n) || 1));
@@ -67,8 +77,8 @@ function FestivalForm({ bars, products, users, onSave, onCancel, initial, saving
     }));
   };
 
-  const addId = (field, id) => setForm(f => ({ ...f, [field]: [...f[field], id] }));
-  const removeId = (field, id) => setForm(f => ({ ...f, [field]: f[field].filter(x => x !== id) }));
+  const addId = (field, id) => setForm(f => ({ ...f, [field]: [...(f[field] || []), id] }));
+  const removeId = (field, id) => setForm(f => ({ ...f, [field]: (f[field] || []).filter(x => x !== id) }));
 
   return (
     <div className="space-y-4">
@@ -91,16 +101,13 @@ function FestivalForm({ bars, products, users, onSave, onCancel, initial, saving
         </div>
       </div>
 
-      <div className="flex items-center gap-3">
-        <div>
-          <label className="block text-xs text-neutral-400 mb-1">Nº de dias</label>
-          <input type="number" min={1} max={15} value={form.num_days}
-            onChange={e => handleNumDays(e.target.value)}
-            className="w-24 border border-neutral-200 rounded-xl px-3 py-2.5 text-sm text-center focus:outline-none focus:ring-2 focus:ring-neutral-900" />
-        </div>
+      <div>
+        <label className="block text-xs text-neutral-400 mb-1">Nº de dias</label>
+        <input type="number" min={1} max={15} value={form.num_days}
+          onChange={e => handleNumDays(e.target.value)}
+          className="w-24 border border-neutral-200 rounded-xl px-3 py-2.5 text-sm text-center focus:outline-none focus:ring-2 focus:ring-neutral-900" />
       </div>
 
-      {/* Dynamic day name inputs */}
       <div className="space-y-2">
         <label className="block text-xs font-semibold uppercase tracking-widest text-neutral-400">Nomes dos dias</label>
         {form.day_names.map((name, i) => (
@@ -224,12 +231,24 @@ function ProductCard({ product, onUpdate, onDelete }) {
 }
 
 // ── User card ─────────────────────────────────────────────────────────────────
-function UserCard({ appUser, bars, onUpdate, onDelete }) {
+// festivalIds = festivals where this user is currently assigned (festival.user_ids contains user.id)
+function UserCard({ appUser, bars, festivals, onUpdate, onDelete }) {
   const [editing, setEditing] = useState(false);
   const [form, setForm] = useState({ name: appUser.name, pin: appUser.pin, role: appUser.role, bar_id: appUser.bar_id || "" });
+  // Which festivals this user belongs to
+  const [assignedFestivalIds, setAssignedFestivalIds] = useState(
+    festivals.filter(f => (f.user_ids || []).includes(appUser.id)).map(f => f.id)
+  );
 
-  const save = async () => { await onUpdate(appUser.id, form); setEditing(false); };
+  const save = async () => {
+    await onUpdate(appUser.id, form, assignedFestivalIds);
+    setEditing(false);
+  };
+
   const assignedBar = bars.find(b => b.id === appUser.bar_id);
+  const currentFestivalNames = festivals
+    .filter(f => (f.user_ids || []).includes(appUser.id))
+    .map(f => f.name);
 
   if (editing) return (
     <div className="bg-white rounded-2xl border border-neutral-200 p-4 space-y-3">
@@ -256,6 +275,29 @@ function UserCard({ appUser, bars, onUpdate, onDelete }) {
           </div>
         )}
       </div>
+
+      {/* Festival assignment */}
+      <div>
+        <label className="block text-xs font-semibold uppercase tracking-widest text-neutral-400 mb-2">Festivais</label>
+        {assignedFestivalIds.length > 0 && (
+          <div className="flex flex-wrap gap-1.5 mb-2">
+            {assignedFestivalIds.map(fid => {
+              const fest = festivals.find(f => f.id === fid);
+              return fest ? <Chip key={fid} label={fest.name} color="teal"
+                onRemove={() => setAssignedFestivalIds(prev => prev.filter(x => x !== fid))} /> : null;
+            })}
+          </div>
+        )}
+        <select value=""
+          onChange={e => { if (e.target.value && !assignedFestivalIds.includes(e.target.value)) { setAssignedFestivalIds(prev => [...prev, e.target.value]); e.target.value = ""; } }}
+          className="w-full border border-neutral-200 rounded-xl px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-neutral-900">
+          <option value="">+ Adicionar festival...</option>
+          {festivals.filter(f => !assignedFestivalIds.includes(f.id)).map(f => (
+            <option key={f.id} value={f.id}>{f.name}</option>
+          ))}
+        </select>
+      </div>
+
       <div className="flex gap-2">
         <button onClick={save} className="flex items-center gap-1.5 px-3 py-1.5 bg-neutral-900 text-white rounded-lg text-xs font-medium hover:bg-neutral-700"><Check className="w-3.5 h-3.5" /> Guardar</button>
         <button onClick={() => setEditing(false)} className="flex items-center gap-1.5 px-3 py-1.5 border border-neutral-200 rounded-lg text-xs font-medium text-neutral-600 hover:bg-neutral-50"><X className="w-3.5 h-3.5" /> Cancelar</button>
@@ -269,6 +311,11 @@ function UserCard({ appUser, bars, onUpdate, onDelete }) {
         <div className="font-semibold text-neutral-900">{appUser.name}</div>
         <div className="text-xs text-neutral-500 mt-0.5">{ROLE_LABELS[appUser.role] || appUser.role} · PIN: {appUser.pin}</div>
         {assignedBar && <div className="text-xs text-neutral-400 mt-0.5">Bar: {assignedBar.name}</div>}
+        {currentFestivalNames.length > 0 && (
+          <div className="flex flex-wrap gap-1 mt-1">
+            {currentFestivalNames.map(name => <Chip key={name} label={name} color="teal" />)}
+          </div>
+        )}
       </div>
       <div className="flex gap-1 ml-4 shrink-0">
         <button onClick={() => setEditing(true)} className="p-2 text-neutral-400 hover:text-neutral-700 hover:bg-neutral-100 rounded-lg transition-colors"><Pencil className="w-4 h-4" /></button>
@@ -365,6 +412,7 @@ export default function GlobalSettings() {
   const [newBar, setNewBar] = useState({ name: "", leader_name: "", leader_email: "", location: "" });
   const [newProduct, setNewProduct] = useState({ name: "", unit: "units", category: "other", selling_price: "" });
   const [newUser, setNewUser] = useState({ name: "", pin: "", role: "bar_leader", bar_id: "" });
+  const [newUserFestivalIds, setNewUserFestivalIds] = useState([]);
 
   useEffect(() => {
     Promise.all([db.Bar.list(), db.Product.list(), db.AppUser.list(), db.Festival.list()])
@@ -376,11 +424,34 @@ export default function GlobalSettings() {
     return null;
   }
 
-  // ── Festivals ──
+  // ── Festival helpers ──────────────────────────────────────────────────────
+  // Update a festival's user_ids: add/remove userId from affected festivals
+  const syncUserFestivals = async (userId, newFestivalIds) => {
+    const prevFestivalIds = festivals.filter(f => (f.user_ids || []).includes(userId)).map(f => f.id);
+    const toAdd = newFestivalIds.filter(fid => !prevFestivalIds.includes(fid));
+    const toRemove = prevFestivalIds.filter(fid => !newFestivalIds.includes(fid));
+
+    const updates = [];
+    for (const fid of toAdd) {
+      const fest = festivals.find(f => f.id === fid);
+      if (fest) updates.push(db.Festival.update(fid, { user_ids: [...(fest.user_ids || []), userId] }));
+    }
+    for (const fid of toRemove) {
+      const fest = festivals.find(f => f.id === fid);
+      if (fest) updates.push(db.Festival.update(fid, { user_ids: (fest.user_ids || []).filter(id => id !== userId) }));
+    }
+    const updatedFests = await Promise.all(updates);
+    setFestivals(prev => {
+      const map = {};
+      updatedFests.forEach(f => { if (f) map[f.id] = f; });
+      return prev.map(f => map[f.id] || f);
+    });
+  };
+
   const handleCreateFestival = async (form) => {
     setSavingFestival(true);
     const { num_days, day_names, bar_ids, product_ids, user_ids, ...rest } = form;
-    const created = await db.Festival.create({ ...rest, num_days, day_names, bar_ids, product_ids, user_ids, is_active: true, is_closed: false });
+    const created = await db.Festival.create({ ...rest, num_days, day_names, bar_ids: bar_ids || [], product_ids: product_ids || [], user_ids: user_ids || [], is_active: true, is_closed: false });
     if (created) setFestivals(prev => [created, ...prev]);
     setSavingFestival(false);
     setCreatingFestival(false);
@@ -388,12 +459,12 @@ export default function GlobalSettings() {
 
   const handleUpdateFestival = async (id, form) => {
     const { num_days, day_names, bar_ids, product_ids, user_ids, ...rest } = form;
-    const updated = await db.Festival.update(id, { ...rest, num_days, day_names, bar_ids, product_ids, user_ids });
+    const updated = await db.Festival.update(id, { ...rest, num_days, day_names, bar_ids: bar_ids || [], product_ids: product_ids || [], user_ids: user_ids || [] });
     if (updated) setFestivals(prev => prev.map(f => f.id === id ? updated : f));
   };
 
   const handleDeleteFestival = async (id) => {
-    if (!window.confirm("Eliminar este festival? Os relatórios associados não serão eliminados.")) return;
+    if (!window.confirm("Eliminar este festival?")) return;
     await db.Festival.delete(id);
     setFestivals(prev => prev.filter(f => f.id !== id));
   };
@@ -409,7 +480,7 @@ export default function GlobalSettings() {
     if (updated) setFestivals(prev => prev.map(f => f.id === id ? updated : f));
   };
 
-  // ── Bars ──
+  // ── Bars ──────────────────────────────────────────────────────────────────
   const addBar = async () => {
     if (!newBar.name.trim()) return;
     const created = await db.Bar.create({ ...newBar, is_active: true });
@@ -426,7 +497,7 @@ export default function GlobalSettings() {
     setBars(prev => prev.filter(b => b.id !== id));
   };
 
-  // ── Products ──
+  // ── Products ──────────────────────────────────────────────────────────────
   const addProduct = async () => {
     if (!newProduct.name.trim()) return;
     const created = await db.Product.create({ ...newProduct, selling_price: parseFloat(newProduct.selling_price) || 0 });
@@ -443,17 +514,27 @@ export default function GlobalSettings() {
     setProducts(prev => prev.filter(p => p.id !== id));
   };
 
-  // ── Users ──
+  // ── Users ─────────────────────────────────────────────────────────────────
   const addUser = async () => {
     if (!newUser.name.trim() || !newUser.pin.trim()) return;
     const created = await db.AppUser.create(newUser);
-    if (created) setUsers(prev => [created, ...prev]);
+    if (created) {
+      setUsers(prev => [created, ...prev]);
+      // Add this new user to selected festivals
+      if (newUserFestivalIds.length > 0) {
+        await syncUserFestivals(created.id, newUserFestivalIds);
+      }
+    }
     setNewUser({ name: "", pin: "", role: "bar_leader", bar_id: "" });
+    setNewUserFestivalIds([]);
   };
-  const updateUser = async (id, data) => {
+
+  const updateUser = async (id, data, newFestivalIds) => {
     const updated = await db.AppUser.update(id, data);
     if (updated) setUsers(prev => prev.map(u => u.id === id ? updated : u));
+    await syncUserFestivals(id, newFestivalIds);
   };
+
   const deleteUser = async (id) => {
     if (!window.confirm("Eliminar este utilizador?")) return;
     await db.AppUser.delete(id);
@@ -502,7 +583,6 @@ export default function GlobalSettings() {
                       onCancel={() => setCreatingFestival(false)} />
                   </div>
                 )}
-
                 {festivals.map(f => (
                   <FestivalItem key={f.id} festival={f} bars={bars} products={products} users={users}
                     onUpdate={handleUpdateFestival} onDelete={handleDeleteFestival}
@@ -600,13 +680,39 @@ export default function GlobalSettings() {
                       </div>
                     )}
                   </div>
+
+                  {/* Festival assignment for new user */}
+                  <div className="mt-3">
+                    <label className="block text-xs font-semibold uppercase tracking-widest text-neutral-400 mb-2">Festivais</label>
+                    {newUserFestivalIds.length > 0 && (
+                      <div className="flex flex-wrap gap-1.5 mb-2">
+                        {newUserFestivalIds.map(fid => {
+                          const fest = festivals.find(f => f.id === fid);
+                          return fest ? <Chip key={fid} label={fest.name} color="teal"
+                            onRemove={() => setNewUserFestivalIds(prev => prev.filter(x => x !== fid))} /> : null;
+                        })}
+                      </div>
+                    )}
+                    <select value=""
+                      onChange={e => { if (e.target.value && !newUserFestivalIds.includes(e.target.value)) { setNewUserFestivalIds(prev => [...prev, e.target.value]); e.target.value = ""; } }}
+                      className="w-full border border-neutral-200 rounded-xl px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-neutral-900">
+                      <option value="">+ Adicionar festival...</option>
+                      {festivals.filter(f => !newUserFestivalIds.includes(f.id)).map(f => (
+                        <option key={f.id} value={f.id}>{f.name}</option>
+                      ))}
+                    </select>
+                  </div>
+
                   <button onClick={addUser} disabled={!newUser.name.trim() || !newUser.pin.trim()}
                     className="mt-3 flex items-center gap-2 px-4 py-2 bg-neutral-900 text-white rounded-xl text-sm font-medium hover:bg-neutral-700 transition-colors disabled:opacity-40">
                     <Plus className="w-4 h-4" /> Adicionar Utilizador
                   </button>
                 </div>
                 <div className="space-y-3">
-                  {users.map(u => <UserCard key={u.id} appUser={u} bars={bars} onUpdate={updateUser} onDelete={deleteUser} />)}
+                  {users.map(u => (
+                    <UserCard key={u.id} appUser={u} bars={bars} festivals={festivals}
+                      onUpdate={updateUser} onDelete={deleteUser} />
+                  ))}
                   {users.length === 0 && <div className="text-center py-10 text-neutral-300 text-sm">Nenhum utilizador criado ainda</div>}
                 </div>
               </div>
