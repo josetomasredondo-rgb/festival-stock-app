@@ -75,6 +75,7 @@ function createEntity(collectionName) {
       return data || []
     },
 
+    // filter stock_reports by festival_id (stock reports still have festival_id)
     filterByFestival: async (festivalId, sortField) => {
       let q = supabase.from(table).select('*').eq('festival_id', festivalId)
       if (sortField) {
@@ -106,24 +107,6 @@ function createEntity(collectionName) {
   }
 }
 
-// Helper: get bars for a festival using bar_ids (new model) or festival_id (legacy)
-export async function getFestivalBars(festival) {
-  if (!festival) return []
-  if (festival.bar_ids && festival.bar_ids.length > 0) {
-    return db.Bar.filterByIds(festival.bar_ids)
-  }
-  return db.Bar.filterByFestival(festival.id)
-}
-
-// Helper: get products for a festival using product_ids (new model) or all products (legacy)
-export async function getFestivalProducts(festival) {
-  if (!festival) return []
-  if (festival.product_ids && festival.product_ids.length > 0) {
-    return db.Product.filterByIds(festival.product_ids)
-  }
-  return db.Product.list()
-}
-
 export const db = {
   Bar: createEntity('bars'),
   Product: createEntity('products'),
@@ -134,6 +117,22 @@ export const db = {
   FestivalSettings: createEntity('festivalSettings'),
   Festival: createEntity('festivals'),
   AppUser: createEntity('appUsers'),
+}
+
+// Bars are now global — get festival bars via bar_ids array
+export async function getFestivalBars(festival) {
+  if (!festival) return []
+  const ids = festival.bar_ids || []
+  if (ids.length === 0) return []
+  return db.Bar.filterByIds(ids)
+}
+
+// Products are now global — get festival products via product_ids array
+export async function getFestivalProducts(festival) {
+  if (!festival) return []
+  const ids = festival.product_ids || []
+  if (ids.length === 0) return []
+  return db.Product.filterByIds(ids)
 }
 
 export default db

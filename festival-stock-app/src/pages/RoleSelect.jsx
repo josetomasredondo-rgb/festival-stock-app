@@ -49,8 +49,8 @@ export default function RoleSelect() {
     // Non-managers: load assigned festivals for inline step 3
     setLoadingFestivals(true);
     const allFestivals = await db.Festival.list();
-    const ids = selectedUser.festival_ids || [];
-    const mine = allFestivals.filter(f => ids.includes(f.id));
+    // Festivals where this user is listed in user_ids
+    const mine = allFestivals.filter(f => (f.user_ids || []).includes(selectedUser.id));
     setAssignedFestivals(mine);
     setLoadingFestivals(false);
 

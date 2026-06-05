@@ -17,8 +17,8 @@ export const ROLE_ACCESS = {
 };
 
 export const DEFAULT_SETTINGS = {
-  num_days: 5,
-  day_names: ["Dia 1", "Dia 2", "Dia 3", "Dia 4", "Dia 5"],
+  num_days: 1,
+  day_names: ["Dia 1"],
   report_type_labels: {
     opening: "Contagem de Abertura",
     delivery: "Entrega Recebida",
@@ -27,13 +27,17 @@ export const DEFAULT_SETTINGS = {
   },
 };
 
+// Reads day names and report type labels from the current festival.
+// num_days + day_names come from direct festival columns (set in GlobalSettings).
+// report_type_labels still live in festival.settings jsonb.
 export function useFestivalSettings() {
   const { currentFestival } = useContext(AuthContext);
-  const s = currentFestival?.settings || {};
-  const numDays = s.num_days || DEFAULT_SETTINGS.num_days;
+  const numDays = currentFestival?.num_days || DEFAULT_SETTINGS.num_days;
+  const rawDayNames = currentFestival?.day_names || [];
   const dayNames = Array.from({ length: numDays }, (_, i) =>
-    s.day_names?.[i] || DEFAULT_SETTINGS.day_names[i] || `Dia ${i + 1}`
+    rawDayNames[i] || DEFAULT_SETTINGS.day_names[i] || `Dia ${i + 1}`
   );
+  const s = currentFestival?.settings || {};
   const reportTypeLabels = {
     opening: s.report_type_labels?.opening || DEFAULT_SETTINGS.report_type_labels.opening,
     delivery: s.report_type_labels?.delivery || DEFAULT_SETTINGS.report_type_labels.delivery,
