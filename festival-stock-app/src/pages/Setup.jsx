@@ -165,6 +165,103 @@ function UserCard({ appUser, bars, festivals, onUpdate, onDelete }) {
   );
 }
 
+// ── Festival card ────────────────────────────────────────────────────────────
+function FestivalCard({ festival: f, allBars, allProducts, onNumDays, onAssign, onClose, onReopen }) {
+  const [expanded, setExpanded] = useState(false);
+  const [barIds, setBarIds] = useState(f.bar_ids || []);
+  const [productIds, setProductIds] = useState(f.product_ids || []);
+  const [saving, setSaving] = useState(false);
+
+  const toggleBar = (id) => setBarIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
+  const toggleProduct = (id) => setProductIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
+
+  const handleSave = async () => {
+    setSaving(true);
+    await onAssign(f.id, barIds, productIds);
+    setSaving(false);
+    setExpanded(false);
+  };
+
+  const assignedBars = allBars.filter(b => (f.bar_ids || []).includes(b.id));
+  const assignedProducts = allProducts.filter(p => (f.product_ids || []).includes(p.id));
+
+  return (
+    <div className="bg-white rounded-2xl border border-neutral-100 shadow-sm overflow-hidden">
+      <div className="p-4">
+        <div className="flex items-start justify-between">
+          <div className="flex-1 min-w-0">
+            <div className="font-semibold text-neutral-900 flex items-center gap-2 flex-wrap">
+              {f.name}
+              {f.is_closed
+                ? <span className="text-xs bg-red-100 text-red-600 px-2 py-0.5 rounded-full">Fechado</span>
+                : <span className="text-xs bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full">Ativo</span>}
+            </div>
+            {f.start_date && <div className="text-xs text-neutral-400 mt-0.5">{f.start_date}{f.end_date ? ` → ${f.end_date}` : ""}</div>}
+            <div className="flex items-center gap-2 mt-2">
+              <span className="text-xs text-neutral-400">Nº de dias:</span>
+              <input type="number" min={1} max={10} defaultValue={f.settings?.num_days || 5}
+                onBlur={e => onNumDays(f.id, Math.max(1, Math.min(10, Number(e.target.value))))}
+                className="w-14 border border-neutral-200 rounded-lg px-2 py-1 text-xs text-center focus:outline-none focus:ring-2 focus:ring-neutral-900" />
+            </div>
+            {!expanded && (
+              <div className="mt-2 flex flex-wrap gap-1">
+                {assignedBars.map(b => <span key={b.id} className="text-xs bg-violet-50 text-violet-700 px-2 py-0.5 rounded-full">{b.name}</span>)}
+                {assignedProducts.map(p => <span key={p.id} className="text-xs bg-teal-50 text-teal-700 px-2 py-0.5 rounded-full">{p.name}</span>)}
+                {assignedBars.length === 0 && assignedProducts.length === 0 && (
+                  <span className="text-xs text-neutral-300">Sem bares ou produtos atribuídos</span>
+                )}
+              </div>
+            )}
+          </div>
+          <div className="flex gap-1 ml-4 shrink-0">
+            <button onClick={() => setExpanded(v => !v)}
+              className="px-3 py-1.5 border border-neutral-200 rounded-lg text-xs font-medium text-neutral-600 hover:bg-neutral-50">
+              {expanded ? "Fechar" : "Editar"}
+            </button>
+            {f.is_closed
+              ? <button onClick={() => onReopen(f.id)} className="px-3 py-1.5 border border-neutral-200 rounded-lg text-xs font-medium text-neutral-600 hover:bg-neutral-50">Reabrir</button>
+              : <button onClick={() => onClose(f.id)} className="px-3 py-1.5 border border-red-200 rounded-lg text-xs font-medium text-red-600 hover:bg-red-50">Fechar</button>}
+          </div>
+        </div>
+      </div>
+
+      {expanded && (
+        <div className="border-t border-neutral-100 p-4 space-y-4 bg-neutral-50">
+          <div>
+            <div className="text-xs font-semibold uppercase tracking-widest text-neutral-400 mb-2">Bares</div>
+            <div className="flex flex-wrap gap-2">
+              {allBars.map(b => (
+                <button key={b.id} type="button" onClick={() => toggleBar(b.id)}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-all ${barIds.includes(b.id) ? "bg-neutral-900 text-white border-neutral-900" : "bg-white text-neutral-600 border-neutral-200 hover:border-neutral-400"}`}>
+                  {b.name}
+                </button>
+              ))}
+              {allBars.length === 0 && <span className="text-xs text-neutral-300">Nenhum bar criado ainda</span>}
+            </div>
+          </div>
+          <div>
+            <div className="text-xs font-semibold uppercase tracking-widest text-neutral-400 mb-2">Produtos</div>
+            <div className="flex flex-wrap gap-2">
+              {allProducts.map(p => (
+                <button key={p.id} type="button" onClick={() => toggleProduct(p.id)}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-all ${productIds.includes(p.id) ? "bg-neutral-900 text-white border-neutral-900" : "bg-white text-neutral-600 border-neutral-200 hover:border-neutral-400"}`}>
+                  {p.name}
+                </button>
+              ))}
+              {allProducts.length === 0 && <span className="text-xs text-neutral-300">Nenhum produto criado ainda</span>}
+            </div>
+          </div>
+          <button onClick={handleSave} disabled={saving}
+            className="flex items-center gap-1.5 px-4 py-2 bg-neutral-900 text-white rounded-xl text-sm font-medium hover:bg-neutral-700 disabled:opacity-40 transition-colors">
+            {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
+            Guardar
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Main Setup ────────────────────────────────────────────────────────────────
 const TABS = ["bars", "products", "users", "festivals", "settings"];
 const TAB_LABELS = { bars: "Bares", products: "Produtos", users: "Utilizadores", festivals: "Festivais", settings: "Configurações" };
@@ -172,9 +269,8 @@ const TAB_LABELS = { bars: "Bares", products: "Produtos", users: "Utilizadores",
 export default function Setup() {
   const { role, currentFestival, setCurrentFestival } = useAuth();
   const [tab, setTab] = useState("bars");
-  const [bars, setBars] = useState([]);
-  const [allBars, setAllBars] = useState([]); // all bars across festivals for user assignment
-  const [products, setProducts] = useState([]);
+  const [bars, setBars] = useState([]);       // all bars (global)
+  const [products, setProducts] = useState([]); // all products (global)
   const [appUsers, setAppUsers] = useState([]);
   const [festivals, setFestivals] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -186,18 +282,14 @@ export default function Setup() {
   const [newBar, setNewBar] = useState({ name: "", leader_name: "", leader_email: "", location: "" });
   const [newProduct, setNewProduct] = useState({ name: "", unit: "units", category: "other", selling_price: "" });
   const [newUser, setNewUser] = useState({ name: "", pin: "", role: "bar_leader", festival_ids: [], bar_id: "" });
-  const [newFestival, setNewFestival] = useState({ name: "", start_date: "", end_date: "", num_days: 5 });
+  const [newFestival, setNewFestival] = useState({ name: "", start_date: "", end_date: "", num_days: 5, bar_ids: [], product_ids: [] });
   const [settingsForm, setSettingsForm] = useState(null);
   const [savingSettings, setSavingSettings] = useState(false);
 
   useEffect(() => {
-    const loads = [db.Product.list(), db.Festival.list(), db.AppUser.list(), db.Bar.list()];
-    if (festivalId) loads.unshift(db.Bar.filterByFestival(festivalId));
-    Promise.all(festivalId
-      ? [db.Bar.filterByFestival(festivalId), db.Product.list(), db.Festival.list(), db.AppUser.list(), db.Bar.list()]
-      : [Promise.resolve([]), db.Product.list(), db.Festival.list(), db.AppUser.list(), db.Bar.list()]
-    ).then(([fb, p, fests, users, ab]) => {
-      setBars(fb); setProducts(p); setFestivals(fests); setAppUsers(users); setAllBars(ab); setLoading(false);
+    Promise.all([db.Bar.list(), db.Product.list(), db.Festival.list(), db.AppUser.list()])
+    .then(([b, p, fests, users]) => {
+      setBars(b); setProducts(p); setFestivals(fests); setAppUsers(users); setLoading(false);
       const s = currentFestival?.settings || {};
       const numDays = s.num_days || DEFAULT_SETTINGS.num_days;
       setSettingsForm({
@@ -211,7 +303,7 @@ export default function Setup() {
   // ── Bars ──
   const addBar = async () => {
     if (!newBar.name.trim()) return;
-    const created = await db.Bar.create({ ...newBar, is_active: true, festival_id: festivalId });
+    const created = await db.Bar.create({ ...newBar, is_active: true });
     setBars(prev => [created, ...prev]);
     setNewBar({ name: "", leader_name: "", leader_email: "", location: "" });
   };
@@ -262,14 +354,21 @@ export default function Setup() {
   // ── Festivals ──
   const addFestival = async () => {
     if (!newFestival.name.trim()) return;
-    const { num_days, ...rest } = newFestival;
-    const created = await db.Festival.create({ ...rest, is_active: true, is_closed: false, settings: { num_days } });
+    const { num_days, bar_ids, product_ids, ...rest } = newFestival;
+    const created = await db.Festival.create({ ...rest, is_active: true, is_closed: false, bar_ids, product_ids, settings: { num_days } });
     setFestivals(prev => [created, ...prev]);
-    setNewFestival({ name: "", start_date: "", end_date: "", num_days: 5 });
+    setNewFestival({ name: "", start_date: "", end_date: "", num_days: 5, bar_ids: [], product_ids: [] });
   };
 
   const updateFestivalNumDays = async (id, numDays, festival) => {
     const updated = await db.Festival.update(id, { settings: { ...(festival.settings || {}), num_days: numDays } });
+    if (!updated) return;
+    setFestivals(prev => prev.map(f => f.id === id ? updated : f));
+    if (id === festivalId) setCurrentFestival(updated);
+  };
+
+  const updateFestivalAssignments = async (id, bar_ids, product_ids) => {
+    const updated = await db.Festival.update(id, { bar_ids, product_ids });
     if (!updated) return;
     setFestivals(prev => prev.map(f => f.id === id ? updated : f));
     if (id === festivalId) setCurrentFestival(updated);
@@ -332,7 +431,6 @@ export default function Setup() {
               <div>
                 <div className="bg-white rounded-2xl border border-neutral-100 p-5 mb-5 shadow-sm">
                   <div className="text-xs font-semibold uppercase tracking-widest text-neutral-400 mb-3">Adicionar Novo Bar</div>
-                  {!festivalId && <p className="text-sm text-amber-600 mb-3">Seleciona um festival primeiro para adicionar bares.</p>}
                   <div className="grid grid-cols-2 gap-3">
                     {[["name","Nome do Bar *"], ["leader_name","Nome do Responsável"], ["leader_email","Email"], ["location","Localização"]].map(([k,l]) => (
                       <input key={k} type="text" placeholder={l} value={newBar[k]}
@@ -340,8 +438,8 @@ export default function Setup() {
                         className="border border-neutral-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-neutral-900" />
                     ))}
                   </div>
-                  <button onClick={addBar} disabled={!festivalId}
-                    className="mt-3 flex items-center gap-2 px-4 py-2 bg-neutral-900 text-white rounded-xl text-sm font-medium hover:bg-neutral-700 transition-colors disabled:opacity-40">
+                  <button onClick={addBar}
+                    className="mt-3 flex items-center gap-2 px-4 py-2 bg-neutral-900 text-white rounded-xl text-sm font-medium hover:bg-neutral-700 transition-colors">
                     <Plus className="w-4 h-4" /> Adicionar Bar
                   </button>
                 </div>
@@ -407,7 +505,7 @@ export default function Setup() {
                       <select value={newUser.bar_id} onChange={e => setNewUser(f => ({ ...f, bar_id: e.target.value }))}
                         className="w-full border border-neutral-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none bg-white">
                         <option value="">Nenhum</option>
-                        {allBars.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
+                        {bars.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
                       </select>
                     </div>
                   </div>
@@ -434,7 +532,7 @@ export default function Setup() {
                   </button>
                 </div>
                 <div className="space-y-3">
-                  {appUsers.map(u => <UserCard key={u.id} appUser={u} bars={allBars} festivals={festivals} onUpdate={updateUser} onDelete={deleteUser} />)}
+                  {appUsers.map(u => <UserCard key={u.id} appUser={u} bars={bars} festivals={festivals} onUpdate={updateUser} onDelete={deleteUser} />)}
                   {appUsers.length === 0 && <div className="text-center py-10 text-neutral-300 text-sm">Nenhum utilizador criado ainda</div>}
                 </div>
               </div>
@@ -469,6 +567,32 @@ export default function Setup() {
                           className="w-full border border-neutral-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-neutral-900 text-center" />
                       </div>
                     </div>
+                    <div>
+                      <label className="block text-xs text-neutral-400 mb-2">Bares do festival</label>
+                      <div className="flex flex-wrap gap-2">
+                        {bars.map(b => (
+                          <button key={b.id} type="button"
+                            onClick={() => setNewFestival(f => ({ ...f, bar_ids: f.bar_ids.includes(b.id) ? f.bar_ids.filter(x => x !== b.id) : [...f.bar_ids, b.id] }))}
+                            className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-all ${newFestival.bar_ids.includes(b.id) ? "bg-neutral-900 text-white border-neutral-900" : "bg-white text-neutral-600 border-neutral-200 hover:border-neutral-400"}`}>
+                            {b.name}
+                          </button>
+                        ))}
+                        {bars.length === 0 && <span className="text-xs text-neutral-300">Cria primeiro os bares no separador Bares</span>}
+                      </div>
+                    </div>
+                    <div>
+                      <label className="block text-xs text-neutral-400 mb-2">Produtos do festival</label>
+                      <div className="flex flex-wrap gap-2">
+                        {products.map(p => (
+                          <button key={p.id} type="button"
+                            onClick={() => setNewFestival(f => ({ ...f, product_ids: f.product_ids.includes(p.id) ? f.product_ids.filter(x => x !== p.id) : [...f.product_ids, p.id] }))}
+                            className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-all ${newFestival.product_ids.includes(p.id) ? "bg-neutral-900 text-white border-neutral-900" : "bg-white text-neutral-600 border-neutral-200 hover:border-neutral-400"}`}>
+                            {p.name}
+                          </button>
+                        ))}
+                        {products.length === 0 && <span className="text-xs text-neutral-300">Cria primeiro os produtos no separador Produtos</span>}
+                      </div>
+                    </div>
                   </div>
                   <button onClick={addFestival} disabled={!newFestival.name.trim()}
                     className="mt-3 flex items-center gap-2 px-4 py-2 bg-neutral-900 text-white rounded-xl text-sm font-medium hover:bg-neutral-700 transition-colors disabled:opacity-40">
@@ -477,31 +601,10 @@ export default function Setup() {
                 </div>
                 <div className="space-y-3">
                   {festivals.map(f => (
-                    <div key={f.id} className="bg-white rounded-2xl border border-neutral-100 p-4 flex items-start justify-between shadow-sm">
-                      <div>
-                        <div className="font-semibold text-neutral-900 flex items-center gap-2">
-                          {f.name}
-                          {f.is_closed
-                            ? <span className="text-xs bg-red-100 text-red-600 px-2 py-0.5 rounded-full">Fechado</span>
-                            : <span className="text-xs bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full">Ativo</span>}
-                        </div>
-                        {f.start_date && <div className="text-xs text-neutral-400 mt-0.5">{f.start_date}{f.end_date ? ` → ${f.end_date}` : ""}</div>}
-                        <div className="flex items-center gap-2 mt-2">
-                          <span className="text-xs text-neutral-400">Nº de dias:</span>
-                          <input
-                            type="number" min={1} max={10}
-                            defaultValue={f.settings?.num_days || 5}
-                            onBlur={e => updateFestivalNumDays(f.id, Math.max(1, Math.min(10, Number(e.target.value))), f)}
-                            className="w-16 border border-neutral-200 rounded-lg px-2 py-1 text-xs text-center focus:outline-none focus:ring-2 focus:ring-neutral-900"
-                          />
-                        </div>
-                      </div>
-                      <div className="flex gap-1 ml-4">
-                        {f.is_closed
-                          ? <button onClick={() => reopenFestival(f.id)} className="px-3 py-1.5 border border-neutral-200 rounded-lg text-xs font-medium text-neutral-600 hover:bg-neutral-50">Reabrir</button>
-                          : <button onClick={() => closeFestival(f.id)} className="px-3 py-1.5 border border-red-200 rounded-lg text-xs font-medium text-red-600 hover:bg-red-50">Fechar</button>}
-                      </div>
-                    </div>
+                    <FestivalCard key={f.id} festival={f} allBars={bars} allProducts={products}
+                      onNumDays={(id, n) => updateFestivalNumDays(id, n, f)}
+                      onAssign={(id, bIds, pIds) => updateFestivalAssignments(id, bIds, pIds)}
+                      onClose={closeFestival} onReopen={reopenFestival} />
                   ))}
                   {festivals.length === 0 && <div className="text-center py-10 text-neutral-300 text-sm">Nenhum festival criado ainda</div>}
                 </div>

@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
 import { ChevronLeft, Loader2, ChevronDown, ChevronUp, AlertTriangle } from "lucide-react";
-import db from "../lib/db";
+import db, { getFestivalBars } from "../lib/db";
 import { useAuth, useFestivalSettings } from "../lib/AuthContext";
 
 const TYPE_COLOR = {
@@ -37,7 +37,7 @@ export default function DailySheet() {
   useEffect(() => {
     if (!festivalId) { setLoading(false); return; }
     Promise.all([
-      db.Bar.filterByFestival(festivalId),
+      getFestivalBars(currentFestival),
       db.StockReport.filterByFestival(festivalId, "-created_date"),
     ]).then(([b, r]) => {
       let visibleBars = b;

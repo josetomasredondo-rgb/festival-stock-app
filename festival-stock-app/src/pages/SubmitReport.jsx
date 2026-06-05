@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
 import { ChevronLeft, Loader2, Plus, Trash2, CheckCircle } from "lucide-react";
-import db from "../lib/db";
+import db, { getFestivalBars, getFestivalProducts } from "../lib/db";
 import { useAuth, useFestivalSettings } from "../lib/AuthContext";
 
 const REPORT_TYPE_COLORS = {
@@ -52,8 +52,8 @@ export default function SubmitReport() {
   useEffect(() => {
     if (!festivalId) { setLoading(false); return; }
     Promise.all([
-      db.Bar.filterByFestival(festivalId),
-      db.Product.list(),
+      getFestivalBars(currentFestival),
+      getFestivalProducts(currentFestival),
       db.StockReport.filterByFestival(festivalId, "-created_date"),
     ]).then(([b, p, r]) => {
       let activeBars = b.filter(bar => bar.is_active !== false);

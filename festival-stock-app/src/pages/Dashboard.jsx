@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { BarChart2, ClipboardList, Package, ArrowRight, Lock, FileText } from "lucide-react";
-import db from "../lib/db";
+import db, { getFestivalBars } from "../lib/db";
 import { useAuth, ROLE_ACCESS, useFestivalSettings } from "../lib/AuthContext";
 
 export default function Dashboard() {
@@ -18,7 +18,7 @@ export default function Dashboard() {
   useEffect(() => {
     if (!festivalId) { setLoading(false); return; }
     Promise.all([
-      db.Bar.filterByFestival(festivalId),
+      getFestivalBars(currentFestival),
       db.StockReport.filterByFestival(festivalId, "-created_date"),
     ]).then(([b, r]) => {
       setBars(b);

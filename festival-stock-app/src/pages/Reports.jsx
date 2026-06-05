@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
 import { ChevronLeft, Loader2, Pencil, Trash2, Plus, Check } from "lucide-react";
-import db from "../lib/db";
+import db, { getFestivalBars } from "../lib/db";
 import { useAuth, useFestivalSettings } from "../lib/AuthContext";
 
 const REPORT_TYPE_COLORS = {
@@ -146,7 +146,7 @@ export default function Reports() {
     if (!festivalId) { setLoading(false); return; }
     const [r, b, p] = await Promise.all([
       db.StockReport.filterByFestival(festivalId, "-created_date"),
-      db.Bar.filterByFestival(festivalId),
+      getFestivalBars(currentFestival),
       db.Product.list(),
     ]);
     setReports(r); setBars(b); setProducts(p); setLoading(false);

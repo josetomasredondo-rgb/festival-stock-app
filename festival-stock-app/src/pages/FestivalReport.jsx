@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
 import { ChevronLeft, Download } from "lucide-react";
-import db from "../lib/db";
+import db, { getFestivalBars } from "../lib/db";
 import { useAuth, useFestivalSettings } from "../lib/AuthContext";
 
 export default function FestivalReport() {
@@ -17,7 +17,7 @@ export default function FestivalReport() {
   useEffect(() => {
     if (!festivalId) { setLoading(false); return; }
     Promise.all([
-      db.Bar.filterByFestival(festivalId),
+      getFestivalBars(currentFestival),
       db.StockReport.filterByFestival(festivalId, "-created_date"),
     ]).then(([b, r]) => { setBars(b); setReports(r); setLoading(false); });
   }, [festivalId]);

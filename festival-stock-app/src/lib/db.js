@@ -88,7 +88,40 @@ function createEntity(collectionName) {
       if (error) { console.error(error); return [] }
       return data || []
     },
+
+    filterByIds: async (ids, sortField) => {
+      if (!ids || ids.length === 0) return []
+      let q = supabase.from(table).select('*').in('id', ids)
+      if (sortField) {
+        const desc = sortField.startsWith('-')
+        const field = desc ? sortField.slice(1) : sortField
+        q = q.order(field, { ascending: !desc })
+      } else {
+        q = q.order('created_date', { ascending: false })
+      }
+      const { data, error } = await q
+      if (error) { console.error(error); return [] }
+      return data || []
+    },
   }
+}
+
+// Helper: get bars for a festival using bar_ids (new model) or festival_id (legacy)
+export async function getFestivalBars(festival) {
+  if (!festival) return []
+  if (festival.bar_ids && festival.bar_ids.length > 0) {
+    return db.Bar.filterByIds(festival.bar_ids)
+  }
+  return db.Bar.filterByFestival(festival.id)
+}
+
+// Helper: get products for a festival using product_ids (new model) or all products (legacy)
+export async function getFestivalProducts(festival) {
+  if (!festival) return []
+  if (festival.product_ids && festival.product_ids.length > 0) {
+    return db.Product.filterByIds(festival.product_ids)
+  }
+  return db.Product.list()
 }
 
 export const db = {
