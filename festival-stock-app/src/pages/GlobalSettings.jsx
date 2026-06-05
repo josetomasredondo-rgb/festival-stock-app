@@ -397,7 +397,7 @@ const TABS = ["festivais", "bares", "produtos", "utilizadores"];
 const TAB_LABELS = { festivais: "Festivais", bares: "Bares", produtos: "Produtos", utilizadores: "Utilizadores" };
 
 export default function GlobalSettings() {
-  const { role } = useAuth();
+  const { role, currentFestival, setCurrentFestival } = useAuth();
   const navigate = useNavigate();
 
   const [tab, setTab] = useState("festivais");
@@ -425,7 +425,17 @@ export default function GlobalSettings() {
   }
 
   // ── Re-fetch helpers (guarantees UI matches DB even if insert returns null) ──
-  const refreshFestivals = async () => setFestivals(await db.Festival.list());
+  const refreshFestivals = async (updatedId) => {
+    const fresh = await db.Festival.list();
+    setFestivals(fresh);
+    // Keep currentFestival in sync with the DB — critical so SubmitReport
+    // and DailySheet always see the latest day_names/bar_ids etc.
+    if (updatedId && currentFestival?.id === updatedId) {
+      const updated = fresh.find(f => f.id === updatedId);
+      if (updated) setCurrentFestival(updated);
+    }
+    return fresh;
+  };
   const refreshBars      = async () => setBars(await db.Bar.list());
   const refreshProducts  = async () => setProducts(await db.Product.list());
   const refreshUsers     = async () => setUsers(await db.AppUser.list());
@@ -463,7 +473,7 @@ export default function GlobalSettings() {
   const handleUpdateFestival = async (id, form) => {
     const { num_days, day_names, bar_ids, product_ids, user_ids, ...rest } = form;
     await db.Festival.update(id, { ...rest, num_days, day_names, bar_ids: bar_ids || [], product_ids: product_ids || [], user_ids: user_ids || [] });
-    await refreshFestivals();
+    await refreshFestivals(id);
   };
 
   const handleDeleteFestival = async (id) => {
@@ -475,12 +485,12 @@ export default function GlobalSettings() {
   const handleCloseFestival = async (id) => {
     if (!window.confirm("Fechar este festival?")) return;
     await db.Festival.update(id, { is_closed: true, is_active: false });
-    await refreshFestivals();
+    await refreshFestivals(id);
   };
 
   const handleReopenFestival = async (id) => {
     await db.Festival.update(id, { is_closed: false, is_active: true });
-    await refreshFestivals();
+    await refreshFestivals(id);
   };
 
   // ── Bars ──────────────────────────────────────────────────────────────────
