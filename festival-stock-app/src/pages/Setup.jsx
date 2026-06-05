@@ -186,7 +186,7 @@ export default function Setup() {
   const [newBar, setNewBar] = useState({ name: "", leader_name: "", leader_email: "", location: "" });
   const [newProduct, setNewProduct] = useState({ name: "", unit: "units", category: "other", selling_price: "" });
   const [newUser, setNewUser] = useState({ name: "", pin: "", role: "bar_leader", festival_ids: [], bar_id: "" });
-  const [newFestival, setNewFestival] = useState({ name: "", start_date: "", end_date: "" });
+  const [newFestival, setNewFestival] = useState({ name: "", start_date: "", end_date: "", num_days: 5 });
   const [settingsForm, setSettingsForm] = useState(null);
   const [savingSettings, setSavingSettings] = useState(false);
 
@@ -262,9 +262,17 @@ export default function Setup() {
   // ── Festivals ──
   const addFestival = async () => {
     if (!newFestival.name.trim()) return;
-    const created = await db.Festival.create({ ...newFestival, is_active: true, is_closed: false });
+    const { num_days, ...rest } = newFestival;
+    const created = await db.Festival.create({ ...rest, is_active: true, is_closed: false, settings: { num_days } });
     setFestivals(prev => [created, ...prev]);
-    setNewFestival({ name: "", start_date: "", end_date: "" });
+    setNewFestival({ name: "", start_date: "", end_date: "", num_days: 5 });
+  };
+
+  const updateFestivalNumDays = async (id, numDays, festival) => {
+    const updated = await db.Festival.update(id, { settings: { ...(festival.settings || {}), num_days: numDays } });
+    if (!updated) return;
+    setFestivals(prev => prev.map(f => f.id === id ? updated : f));
+    if (id === festivalId) setCurrentFestival(updated);
   };
   const closeFestival = async (id) => {
     if (!window.confirm("Fechar este festival?")) return;
@@ -441,7 +449,7 @@ export default function Setup() {
                     <input type="text" placeholder="Nome do festival *" value={newFestival.name}
                       onChange={e => setNewFestival(f => ({ ...f, name: e.target.value }))}
                       className="w-full border border-neutral-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-neutral-900" />
-                    <div className="grid grid-cols-2 gap-3">
+                    <div className="grid grid-cols-3 gap-3">
                       <div>
                         <label className="block text-xs text-neutral-400 mb-1">Data início</label>
                         <input type="date" value={newFestival.start_date}
@@ -453,6 +461,12 @@ export default function Setup() {
                         <input type="date" value={newFestival.end_date}
                           onChange={e => setNewFestival(f => ({ ...f, end_date: e.target.value }))}
                           className="w-full border border-neutral-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-neutral-900" />
+                      </div>
+                      <div>
+                        <label className="block text-xs text-neutral-400 mb-1">Nº de dias</label>
+                        <input type="number" min={1} max={10} value={newFestival.num_days}
+                          onChange={e => setNewFestival(f => ({ ...f, num_days: Math.max(1, Math.min(10, Number(e.target.value))) }))}
+                          className="w-full border border-neutral-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-neutral-900 text-center" />
                       </div>
                     </div>
                   </div>
@@ -472,6 +486,15 @@ export default function Setup() {
                             : <span className="text-xs bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full">Ativo</span>}
                         </div>
                         {f.start_date && <div className="text-xs text-neutral-400 mt-0.5">{f.start_date}{f.end_date ? ` → ${f.end_date}` : ""}</div>}
+                        <div className="flex items-center gap-2 mt-2">
+                          <span className="text-xs text-neutral-400">Nº de dias:</span>
+                          <input
+                            type="number" min={1} max={10}
+                            defaultValue={f.settings?.num_days || 5}
+                            onBlur={e => updateFestivalNumDays(f.id, Math.max(1, Math.min(10, Number(e.target.value))), f)}
+                            className="w-16 border border-neutral-200 rounded-lg px-2 py-1 text-xs text-center focus:outline-none focus:ring-2 focus:ring-neutral-900"
+                          />
+                        </div>
                       </div>
                       <div className="flex gap-1 ml-4">
                         {f.is_closed
@@ -491,20 +514,6 @@ export default function Setup() {
                 {!festivalId && (
                   <p className="text-sm text-amber-600">Seleciona um festival primeiro para configurar as suas definições.</p>
                 )}
-
-                {/* Number of days */}
-                <div className="bg-white rounded-2xl border border-neutral-100 p-5 shadow-sm">
-                  <div className="text-xs font-semibold uppercase tracking-widest text-neutral-400 mb-3">Número de Dias do Festival</div>
-                  <div className="flex items-center gap-3">
-                    <input
-                      type="number" min={1} max={10}
-                      value={settingsForm.num_days}
-                      onChange={e => handleNumDaysChange(e.target.value)}
-                      className="w-24 border border-neutral-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-neutral-900 text-center"
-                    />
-                    <span className="text-sm text-neutral-400">dias (máx. 10)</span>
-                  </div>
-                </div>
 
                 {/* Day names */}
                 <div className="bg-white rounded-2xl border border-neutral-100 p-5 shadow-sm">
