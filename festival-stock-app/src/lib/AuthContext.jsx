@@ -50,34 +50,41 @@ function readSession(key) {
 }
 
 export function AuthProvider({ children }) {
-  const [user, setUser] = useState(() => readSession("app_user"));
+  const [user] = useState(() => readSession("app_user"));
   const [currentFestival, setCurrentFestivalRaw] = useState(() => readSession("app_festival"));
+  // Block rendering until we have fresh festival data from DB
+  const [ready, setReady] = useState(false);
 
-  const role = user?.role || null;
-
-  // On mount, re-fetch the current festival from DB so day_names / bar_ids
-  // are always up-to-date (session storage can hold stale data).
   useEffect(() => {
     const cached = readSession("app_festival");
-    if (!cached?.id) return;
+    if (!cached?.id) {
+      setReady(true);
+      return;
+    }
+    // Always fetch latest festival from Supabase so day_names / bar_ids etc.
+    // are never stale from a previous session
     supabase.from("festivals").select("*").eq("id", cached.id).single()
       .then(({ data }) => {
         if (data) {
           sessionStorage.setItem("app_festival", JSON.stringify(data));
           setCurrentFestivalRaw(data);
         }
-      });
+        setReady(true);
+      })
+      .catch(() => setReady(true)); // on network error, proceed with cached data
   }, []);
+
+  const [userState, setUserState] = useState(user);
 
   const login = (u) => {
     sessionStorage.setItem("app_user", JSON.stringify(u));
-    setUser(u);
+    setUserState(u);
   };
 
   const logout = () => {
     sessionStorage.removeItem("app_user");
     sessionStorage.removeItem("app_festival");
-    setUser(null);
+    setUserState(null);
     setCurrentFestivalRaw(null);
   };
 
@@ -86,8 +93,14 @@ export function AuthProvider({ children }) {
     setCurrentFestivalRaw(f);
   };
 
+  const role = userState?.role || null;
+
+  // Don't render anything until the festival refresh is complete —
+  // prevents SubmitReport from using stale day_names before the fetch lands
+  if (!ready) return null;
+
   return (
-    <AuthContext.Provider value={{ user, role, currentFestival, setCurrentFestival, login, logout }}>
+    <AuthContext.Provider value={{ user: userState, role, currentFestival, setCurrentFestival, login, logout }}>
       {children}
     </AuthContext.Provider>
   );
