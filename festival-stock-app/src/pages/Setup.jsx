@@ -48,7 +48,6 @@ const TAB_LABELS = { bars: "Bares", products: "Produtos" };
 
 export default function Setup() {
   const { role, currentFestival, setCurrentFestival } = useAuth();
-  const { reportTypeLabels } = useFestivalSettings();
   const [tab, setTab] = useState("bars");
 
   // Festival-assigned bars and products

@@ -19,7 +19,6 @@ export default function DailySheet() {
   const [loading, setLoading] = useState(true);
   const [selectedDay, setSelectedDay] = useState(null);
   const [expandedBars, setExpandedBars] = useState({});
-  const days = dayNames;
   const TYPE_LABEL = {
     opening: reportTypeLabels.opening,
     delivery: reportTypeLabels.delivery,
@@ -28,6 +27,13 @@ export default function DailySheet() {
   };
 
   const festivalId = currentFestival?.id;
+
+  // Union of configured day names + any festival_day values that exist in reports
+  // (handles backward compat with old "Day 1" names and custom names)
+  const reportDays = [...new Set(reports.map(r => r.festival_day).filter(Boolean))];
+  const allDays = [...new Set([...dayNames, ...reportDays])];
+  const days = allDays.length > 0 ? allDays : dayNames;
+
   // Ensure activeDay is always a valid day from the current list
   const activeDay = (selectedDay && days.includes(selectedDay)) ? selectedDay : days[0];
 
