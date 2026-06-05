@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
 import { ChevronLeft, Plus, Trash2, Loader2 } from "lucide-react";
 import db from "../lib/db";
+import { useAuth } from "../lib/AuthContext";
 
 const DAYS = ["Day 1", "Day 2", "Day 3", "Day 4", "Day 5"];
 const REASONS = [
@@ -11,7 +12,7 @@ const REASONS = [
   { value: "other", label: "Outro" },
 ];
 
-function OfferedTab({ bars, products }) {
+function OfferedTab({ bars, products, festivalId }) {
   const [entries, setEntries] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
@@ -21,7 +22,10 @@ function OfferedTab({ bars, products }) {
   const [form, setForm] = useState({ bar_id: "", bar_name: "", festival_day: "Day 1", submitted_by: "", notes: "", items: [] });
   const [submitting, setSubmitting] = useState(false);
 
-  useEffect(() => { db.OfferedItems.list("-created_date", 200).then(r => { setEntries(r); setLoading(false); }); }, []);
+  useEffect(() => {
+    if (!festivalId) { setLoading(false); return; }
+    db.OfferedItems.filterByFestival(festivalId, "-created_date").then(r => { setEntries(r); setLoading(false); });
+  }, [festivalId]);
 
   const addItem = () => setForm(f => ({ ...f, items: [...f.items, { product_id: "", product_name: "", unit: "units", quantity: "", reason: "promotion" }] }));
   const removeItem = (idx) => setForm(f => ({ ...f, items: f.items.filter((_, i) => i !== idx) }));
@@ -33,7 +37,11 @@ function OfferedTab({ bars, products }) {
 
   const handleSubmit = async (e) => {
     e.preventDefault(); setSubmitting(true);
-    const payload = { ...form, items: form.items.map(i => ({ ...i, quantity: parseFloat(i.quantity) || 0 })).filter(i => i.product_name) };
+    const payload = {
+      ...form,
+      festival_id: festivalId,
+      items: form.items.map(i => ({ ...i, quantity: parseFloat(i.quantity) || 0 })).filter(i => i.product_name)
+    };
     const created = await db.OfferedItems.create(payload);
     setEntries(prev => [created, ...prev]);
     setForm({ bar_id: "", bar_name: "", festival_day: "Day 1", submitted_by: "", notes: "", items: [] });
@@ -129,7 +137,7 @@ function OfferedTab({ bars, products }) {
                     <div>
                       <span className="font-medium text-neutral-900">{entry.bar_name}</span>
                       <span className="text-neutral-400 text-sm ml-2">· {entry.festival_day}</span>
-                      {entry.submitted_by && <span className="text-neutral-400 text-xs ml-2">by {entry.submitted_by}</span>}
+                      {entry.submitted_by && <span className="text-neutral-400 text-xs ml-2">por {entry.submitted_by}</span>}
                     </div>
                     <button onClick={() => handleDelete(entry.id)} disabled={deletingId === entry.id} className="p-2 text-neutral-300 hover:text-red-400 hover:bg-red-50 rounded-lg transition-colors disabled:opacity-40">
                       {deletingId === entry.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
@@ -153,14 +161,18 @@ function OfferedTab({ bars, products }) {
 }
 
 export default function Financials() {
+  const { currentFestival } = useAuth();
   const [bars, setBars] = useState([]);
   const [products, setProducts] = useState([]);
   const [tab, setTab] = useState("offered");
   const [loading, setLoading] = useState(true);
 
+  const festivalId = currentFestival?.id;
+
   useEffect(() => {
-    Promise.all([db.Bar.list(), db.Product.list()]).then(([b, p]) => { setBars(b); setProducts(p); setLoading(false); });
-  }, []);
+    const barLoad = festivalId ? db.Bar.filterByFestival(festivalId) : Promise.resolve([]);
+    Promise.all([barLoad, db.Product.list()]).then(([b, p]) => { setBars(b); setProducts(p); setLoading(false); });
+  }, [festivalId]);
 
   return (
     <div className="min-h-screen bg-[#F7F7F5]">
@@ -170,7 +182,7 @@ export default function Financials() {
         </Link>
         <div className="mb-6">
           <h1 className="text-3xl font-bold text-neutral-900">Financeiros</h1>
-          <p className="text-neutral-400 mt-1">Controlo de desperdício, ofertas e preços</p>
+          <p className="text-neutral-400 mt-1">{currentFestival?.name} · Controlo de desperdício, ofertas e preços</p>
         </div>
         <div className="flex gap-2 mb-6">
           {[["offered", "Itens Oferecidos"]].map(([key, label]) => (
@@ -181,7 +193,7 @@ export default function Financials() {
           ))}
         </div>
         {loading ? <div className="text-center py-10 text-neutral-300">A carregar...</div> : (
-          tab === "offered" ? <OfferedTab bars={bars} products={products} /> : null
+          tab === "offered" ? <OfferedTab bars={bars} products={products} festivalId={festivalId} /> : null
         )}
       </div>
     </div>

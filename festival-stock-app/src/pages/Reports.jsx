@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
 import { ChevronLeft, Loader2, Pencil, Trash2, Plus, Check } from "lucide-react";
 import db from "../lib/db";
+import { useAuth } from "../lib/AuthContext";
 
 const DAYS = ["Day 1", "Day 2", "Day 3", "Day 4", "Day 5"];
 const REPORT_TYPES = [
@@ -124,6 +125,7 @@ function EditModal({ report, bars, products, onSave, onClose }) {
 }
 
 export default function Reports() {
+  const { currentFestival } = useAuth();
   const [reports, setReports] = useState([]);
   const [bars, setBars] = useState([]);
   const [products, setProducts] = useState([]);
@@ -134,12 +136,19 @@ export default function Reports() {
   const [filterDay, setFilterDay] = useState("");
   const [filterType, setFilterType] = useState("");
 
+  const festivalId = currentFestival?.id;
+
   const load = async () => {
-    const [r, b, p] = await Promise.all([db.StockReport.list("-created_date", 500), db.Bar.list(), db.Product.list()]);
+    if (!festivalId) { setLoading(false); return; }
+    const [r, b, p] = await Promise.all([
+      db.StockReport.filterByFestival(festivalId, "-created_date"),
+      db.Bar.filterByFestival(festivalId),
+      db.Product.list(),
+    ]);
     setReports(r); setBars(b); setProducts(p); setLoading(false);
   };
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => { load(); }, [festivalId]);
 
   const handleDelete = async (id) => {
     if (!window.confirm("Eliminar este relatório? Esta ação não pode ser desfeita.")) return;
@@ -151,7 +160,7 @@ export default function Reports() {
 
   const handleSaved = async () => {
     setEditingReport(null);
-    const r = await db.StockReport.list("-created_date", 500);
+    const r = await db.StockReport.filterByFestival(festivalId, "-created_date");
     setReports(r);
   };
 
@@ -170,7 +179,7 @@ export default function Reports() {
         <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 mb-6">
           <div>
             <h1 className="text-3xl font-bold text-neutral-900">Relatórios</h1>
-            <p className="text-neutral-400 mt-1">Ver e editar relatórios de stock submetidos</p>
+            <p className="text-neutral-400 mt-1">{currentFestival?.name} · Ver e editar relatórios de stock submetidos</p>
           </div>
           <span className="text-sm text-neutral-400">{filtered.length} relatório{filtered.length !== 1 ? "s" : ""}</span>
         </div>

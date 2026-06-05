@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
 import { ChevronLeft, Loader2, ChevronDown, ChevronUp, AlertTriangle } from "lucide-react";
 import db from "../lib/db";
+import { useAuth } from "../lib/AuthContext";
 
 const TYPE_LABEL = { opening: "Abertura", delivery: "Entrega", night_delivery: "Entrega Noturna", closing: "Fecho" };
 const TYPE_COLOR = {
@@ -12,6 +13,7 @@ const TYPE_COLOR = {
 };
 
 export default function DailySheet() {
+  const { role, user, currentFestival } = useAuth();
   const [bars, setBars] = useState([]);
   const [reports, setReports] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -19,10 +21,24 @@ export default function DailySheet() {
   const [expandedBars, setExpandedBars] = useState({});
   const days = ["Day 1", "Day 2", "Day 3", "Day 4", "Day 5"];
 
+  const festivalId = currentFestival?.id;
+
   useEffect(() => {
-    Promise.all([db.Bar.list(), db.StockReport.list("-created_date", 500)])
-      .then(([b, r]) => { setBars(b); setReports(r); setLoading(false); });
-  }, []);
+    if (!festivalId) { setLoading(false); return; }
+    Promise.all([
+      db.Bar.filterByFestival(festivalId),
+      db.StockReport.filterByFestival(festivalId, "-created_date"),
+    ]).then(([b, r]) => {
+      let visibleBars = b;
+      // bar_leader only sees their own bar
+      if (role === "bar_leader" && user?.bar_id) {
+        visibleBars = b.filter(bar => bar.id === user.bar_id);
+      }
+      setBars(visibleBars);
+      setReports(r);
+      setLoading(false);
+    });
+  }, [festivalId]);
 
   const dayReports = reports.filter(r => r.festival_day === selectedDay);
 
@@ -54,7 +70,6 @@ export default function DailySheet() {
     });
 
     const needsDelivery = rows.some(r => r.closeQty !== "-" && r.consumed !== "-" && Number(r.closeQty) < Number(r.consumed));
-
     return { bar, opening, deliveries, closing, rows, hasData: barReports.length > 0, needsDelivery };
   });
 
@@ -69,7 +84,7 @@ export default function DailySheet() {
         <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 mb-8">
           <div>
             <h1 className="text-3xl font-bold text-neutral-900">Folha Diária</h1>
-            <p className="text-neutral-400 mt-1">Visão geral do stock de todos os bares</p>
+            <p className="text-neutral-400 mt-1">{currentFestival?.name} · Visão geral do stock de todos os bares</p>
           </div>
           <div className="flex gap-2">
             {days.map(d => (
@@ -142,11 +157,6 @@ export default function DailySheet() {
                                   <span className={`font-semibold ${Number(row.consumed) < 0 ? "text-red-500" : "text-neutral-800"}`}>{row.consumed}</span>
                                 ) : <span className="text-neutral-300">-</span>}
                               </td>
-                              <td className="px-2 py-3 text-center w-6">
-                                {row.closeQty !== "-" && row.consumed !== "-" && Number(row.closeQty) < Number(row.consumed) && (
-                                  <AlertTriangle className="w-4 h-4 text-orange-500 inline" />
-                                )}
-                              </td>
                               <td className="px-4 py-3 text-neutral-400 text-xs">{row.unit}</td>
                             </tr>
                           ))}
@@ -167,6 +177,9 @@ export default function DailySheet() {
                 </div>
               );
             })}
+            {barData.length === 0 && (
+              <div className="text-center py-16 text-neutral-300 text-sm">Sem bares neste festival</div>
+            )}
           </div>
         )}
       </div>

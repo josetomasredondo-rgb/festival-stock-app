@@ -1,115 +1,226 @@
-import { useState } from "react";
-import { Lock } from "lucide-react";
+import { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
+import { Lock, Search } from "lucide-react";
+import { useAuth, ROLE_LABELS } from "../lib/AuthContext";
+import db from "../lib/db";
 
-const ROLES = [
-  {
-    key: "bar_leader",
-    label: "Responsável de Bar",
-    description: "Submeter e ver relatórios de stock",
-    pin: "1111",
-    color: "from-violet-500 to-purple-600",
-  },
-  {
-    key: "event_coordinator",
-    label: "Coordenador de Evento",
-    description: "Acesso total exceto financeiros",
-    pin: "2222",
-    color: "from-emerald-500 to-teal-600",
-  },
-  {
-    key: "manager",
-    label: "Gestor da Empresa",
-    description: "Acesso total incluindo financeiros",
-    pin: "3333",
-    color: "from-amber-500 to-orange-500",
-  },
-];
+export default function RoleSelect() {
+  const { login, setCurrentFestival } = useAuth();
+  const navigate = useNavigate();
 
-export default function RoleSelect({ onRoleSelected }) {
-  const [selected, setSelected] = useState(null);
+  const [step, setStep] = useState(1);
+  const [allUsers, setAllUsers] = useState([]);
+  const [search, setSearch] = useState("");
+  const [selectedUser, setSelectedUser] = useState(null);
   const [pin, setPin] = useState("");
-  const [error, setError] = useState("");
+  const [pinError, setPinError] = useState("");
+  const [assignedFestivals, setAssignedFestivals] = useState([]);
+  const [loadingFestivals, setLoadingFestivals] = useState(false);
 
-  const handleRoleClick = (role) => {
-    setSelected(role);
+  useEffect(() => {
+    db.AppUser.list().then(setAllUsers);
+  }, []);
+
+  const filteredUsers = search.trim()
+    ? allUsers.filter(u => u.name.toLowerCase().includes(search.toLowerCase()))
+    : allUsers;
+
+  const handleSelectUser = (user) => {
+    setSelectedUser(user);
     setPin("");
-    setError("");
+    setPinError("");
+    setStep(2);
   };
 
-  const handleConfirm = (e) => {
+  const handlePin = async (e) => {
     e.preventDefault();
-    if (pin === selected.pin) {
-      onRoleSelected(selected.key);
-    } else {
-      setError("PIN incorreto. Tenta novamente.");
+    if (pin !== selectedUser.pin) {
+      setPinError("PIN incorreto. Tenta novamente.");
       setPin("");
+      return;
     }
+    login(selectedUser);
+
+    if (selectedUser.role === "manager") {
+      navigate("/FestivalSelect");
+      return;
+    }
+
+    // Non-managers: load assigned festivals for inline step 3
+    setLoadingFestivals(true);
+    const allFestivals = await db.Festival.list();
+    const ids = selectedUser.festival_ids || [];
+    const mine = allFestivals.filter(f => ids.includes(f.id));
+    setAssignedFestivals(mine);
+    setLoadingFestivals(false);
+
+    if (mine.length === 0) {
+      // No festivals assigned — go to empty festival select
+      navigate("/FestivalSelect");
+      return;
+    }
+    if (mine.length === 1) {
+      // Auto-select if only one
+      setCurrentFestival(mine[0]);
+      navigate("/Dashboard");
+      return;
+    }
+    setStep(3);
   };
 
-  return (
+  const handleFestivalSelect = (festival) => {
+    setCurrentFestival(festival);
+    navigate("/Dashboard");
+  };
+
+  // ── Step 1: Select user ──────────────────────────────────────────────────
+  if (step === 1) return (
     <div className="min-h-screen bg-[#F7F7F5] flex items-center justify-center px-6">
       <div className="w-full max-w-sm">
         <div className="text-center mb-8">
           <div className="inline-flex items-center justify-center w-16 h-16 bg-neutral-900 rounded-2xl mb-4">
             <Lock className="w-7 h-7 text-white" />
           </div>
-          <h1 className="text-2xl font-bold text-neutral-900">Quem és tu?</h1>
-          <p className="text-neutral-400 mt-1 text-sm">Seleciona o teu perfil para continuar</p>
+          <h1 className="text-2xl font-bold text-neutral-900">Bem-vindo</h1>
+          <p className="text-neutral-400 mt-1 text-sm">Seleciona o teu nome para continuar</p>
         </div>
 
-        {!selected ? (
-          <div className="space-y-3">
-            {ROLES.map((role) => (
+        <div className="bg-white rounded-2xl border border-neutral-200 p-5 shadow-sm">
+          <div className="relative mb-3">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-neutral-400" />
+            <input
+              type="text"
+              placeholder="Pesquisar nome..."
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              autoFocus
+              className="w-full pl-9 pr-4 py-2.5 border border-neutral-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-neutral-900"
+            />
+          </div>
+          <div className="space-y-1 max-h-72 overflow-y-auto">
+            {filteredUsers.map(u => (
               <button
-                key={role.key}
-                onClick={() => handleRoleClick(role)}
-                className="w-full bg-white rounded-2xl border border-neutral-200 p-4 text-left hover:border-neutral-400 hover:shadow-sm transition-all group"
+                key={u.id}
+                onClick={() => handleSelectUser(u)}
+                className="w-full text-left px-4 py-3 rounded-xl hover:bg-neutral-50 border border-transparent hover:border-neutral-200 transition-all"
               >
-                <div className={`h-1 w-12 rounded-full bg-gradient-to-r ${role.color} mb-3`} />
-                <div className="font-semibold text-neutral-900">{role.label}</div>
-                <div className="text-sm text-neutral-400 mt-0.5">{role.description}</div>
+                <div className="font-medium text-neutral-900">{u.name}</div>
+                <div className="text-xs text-neutral-400 mt-0.5">{ROLE_LABELS[u.role] || u.role}</div>
               </button>
             ))}
+            {filteredUsers.length === 0 && (
+              <div className="text-center py-8 text-sm text-neutral-300">
+                {search ? "Nenhum utilizador encontrado" : "Nenhum utilizador criado ainda"}
+              </div>
+            )}
           </div>
-        ) : (
-          <div className="bg-white rounded-2xl border border-neutral-200 p-6">
+        </div>
+      </div>
+    </div>
+  );
+
+  // ── Step 2: PIN ──────────────────────────────────────────────────────────
+  if (step === 2) return (
+    <div className="min-h-screen bg-[#F7F7F5] flex items-center justify-center px-6">
+      <div className="w-full max-w-sm">
+        <div className="text-center mb-8">
+          <div className="inline-flex items-center justify-center w-16 h-16 bg-neutral-900 rounded-2xl mb-4">
+            <Lock className="w-7 h-7 text-white" />
+          </div>
+          <h1 className="text-2xl font-bold text-neutral-900">{selectedUser.name}</h1>
+          <p className="text-neutral-400 mt-1 text-sm">{ROLE_LABELS[selectedUser.role]}</p>
+        </div>
+
+        <div className="bg-white rounded-2xl border border-neutral-200 p-6 shadow-sm">
+          <button
+            onClick={() => { setStep(1); setSearch(""); }}
+            className="text-xs text-neutral-400 hover:text-neutral-700 mb-5 flex items-center gap-1"
+          >
+            ← Voltar
+          </button>
+          <form onSubmit={handlePin}>
+            <label className="block text-xs font-semibold uppercase tracking-widest text-neutral-400 mb-2">
+              PIN de Acesso
+            </label>
+            <input
+              type="password"
+              inputMode="numeric"
+              maxLength={6}
+              value={pin}
+              onChange={e => { setPin(e.target.value); setPinError(""); }}
+              placeholder="••••"
+              autoFocus
+              className="w-full border border-neutral-200 rounded-xl px-4 py-3 text-center text-2xl tracking-widest focus:outline-none focus:ring-2 focus:ring-neutral-900 mb-3"
+            />
+            {pinError && <p className="text-red-500 text-sm text-center mb-3">{pinError}</p>}
             <button
-              onClick={() => setSelected(null)}
-              className="text-xs text-neutral-400 hover:text-neutral-700 mb-4 flex items-center gap-1"
+              type="submit"
+              disabled={!pin}
+              className="w-full py-3 bg-neutral-900 text-white rounded-xl font-semibold text-sm hover:bg-neutral-700 transition-colors disabled:opacity-40"
             >
-              ← Voltar
+              {loadingFestivals ? "A carregar..." : "Entrar"}
             </button>
-            <div className={`h-1 w-12 rounded-full bg-gradient-to-r ${selected.color} mb-4`} />
-            <h2 className="font-bold text-neutral-900 mb-1">{selected.label}</h2>
-            <p className="text-sm text-neutral-400 mb-6">{selected.description}</p>
-            <form onSubmit={handleConfirm}>
-              <label className="block text-xs font-semibold uppercase tracking-widest text-neutral-400 mb-2">
-                PIN de Acesso
-              </label>
-              <input
-                type="password"
-                inputMode="numeric"
-                maxLength={6}
-                value={pin}
-                onChange={(e) => { setPin(e.target.value); setError(""); }}
-                placeholder="••••"
-                autoFocus
-                className="w-full border border-neutral-200 rounded-xl px-4 py-3 text-center text-2xl tracking-widest focus:outline-none focus:ring-2 focus:ring-neutral-900 mb-3"
-              />
-              {error && <p className="text-red-500 text-sm text-center mb-3">{error}</p>}
-              <button
-                type="submit"
-                disabled={!pin}
-                className="w-full py-3 bg-neutral-900 text-white rounded-xl font-semibold text-sm hover:bg-neutral-700 transition-colors disabled:opacity-40"
-              >
-                Entrar
-              </button>
-            </form>
-            <p className="text-xs text-neutral-300 text-center mt-4">
-              PINs padrão: Bar=1111 · Coord=2222 · Gestor=3333
-            </p>
-          </div>
-        )}
+          </form>
+        </div>
+      </div>
+    </div>
+  );
+
+  // ── Step 3: Festival selection (non-managers only) ───────────────────────
+  const activeFestivals = assignedFestivals.filter(f => f.is_active && !f.is_closed);
+  const otherFestivals = assignedFestivals.filter(f => !f.is_active || f.is_closed);
+
+  return (
+    <div className="min-h-screen bg-[#F7F7F5] flex items-center justify-center px-6">
+      <div className="w-full max-w-sm">
+        <div className="text-center mb-8">
+          <h1 className="text-2xl font-bold text-neutral-900">Seleciona o Festival</h1>
+          <p className="text-neutral-400 mt-1 text-sm">Em qual festival vais trabalhar hoje?</p>
+        </div>
+
+        <div className="bg-white rounded-2xl border border-neutral-200 p-5 shadow-sm">
+          {activeFestivals.length > 0 && (
+            <>
+              <div className="text-xs font-semibold uppercase tracking-widest text-neutral-400 mb-2">Ativos</div>
+              <div className="space-y-2 mb-4">
+                {activeFestivals.map(f => (
+                  <button
+                    key={f.id}
+                    onClick={() => handleFestivalSelect(f)}
+                    className="w-full text-left px-4 py-3 rounded-xl bg-neutral-50 hover:bg-neutral-100 border border-neutral-200 transition-all"
+                  >
+                    <div className="font-semibold text-neutral-900">{f.name}</div>
+                    {f.start_date && <div className="text-xs text-neutral-400 mt-0.5">{f.start_date}{f.end_date ? ` → ${f.end_date}` : ""}</div>}
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
+
+          {selectedUser.role === "event_coordinator" && otherFestivals.length > 0 && (
+            <>
+              <div className="text-xs font-semibold uppercase tracking-widest text-neutral-400 mb-2">Fechados</div>
+              <div className="space-y-2">
+                {otherFestivals.map(f => (
+                  <button
+                    key={f.id}
+                    onClick={() => handleFestivalSelect(f)}
+                    className="w-full text-left px-4 py-3 rounded-xl hover:bg-neutral-50 border border-neutral-200 text-neutral-500 transition-all"
+                  >
+                    <div className="font-medium">{f.name}</div>
+                    {f.start_date && <div className="text-xs text-neutral-400 mt-0.5">{f.start_date}</div>}
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
+
+          {activeFestivals.length === 0 && (
+            <div className="text-center py-8 text-sm text-neutral-300">
+              Não tens festivais ativos atribuídos
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );

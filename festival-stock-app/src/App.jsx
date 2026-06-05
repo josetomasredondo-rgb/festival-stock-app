@@ -1,7 +1,8 @@
 import { BrowserRouter as Router, Routes, Route, Navigate } from "react-router-dom";
-import { RoleProvider, useRole, ROLE_ACCESS } from "./lib/RoleContext";
+import { AuthProvider, useAuth, ROLE_ACCESS } from "./lib/AuthContext";
 import Layout from "./Layout";
 import RoleSelect from "./pages/RoleSelect";
+import FestivalSelect from "./pages/FestivalSelect";
 import Dashboard from "./pages/Dashboard";
 import SubmitReport from "./pages/SubmitReport";
 import DailySheet from "./pages/DailySheet";
@@ -15,9 +16,12 @@ const ALL_PAGES = {
 };
 
 function AppRoutes() {
-  const { role, selectRole } = useRole();
+  const { user, role, currentFestival } = useAuth();
 
-  if (!role) return <RoleSelect onRoleSelected={selectRole} />;
+  if (!user) return <RoleSelect />;
+
+  // Logged in but no festival selected yet — send to festival select
+  if (!currentFestival && role !== "manager") return <FestivalSelect />;
 
   const allowed = ROLE_ACCESS[role] || [];
 
@@ -25,6 +29,7 @@ function AppRoutes() {
     <Layout>
       <Routes>
         <Route path="/" element={<Navigate to="/Dashboard" replace />} />
+        <Route path="/FestivalSelect" element={<FestivalSelect />} />
         <Route path="/Dashboard" element={<Dashboard />} />
         {allowed.filter(p => p !== "Dashboard").map(pageName => {
           const Page = ALL_PAGES[pageName];
@@ -38,10 +43,10 @@ function AppRoutes() {
 
 export default function App() {
   return (
-    <RoleProvider>
+    <AuthProvider>
       <Router>
         <AppRoutes />
       </Router>
-    </RoleProvider>
+    </AuthProvider>
   );
 }

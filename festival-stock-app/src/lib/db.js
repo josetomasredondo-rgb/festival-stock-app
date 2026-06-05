@@ -1,77 +1,94 @@
-// Local data store — replaces base44 backend
-// All data is saved to localStorage so it persists between sessions
+import { createClient } from '@supabase/supabase-js'
 
-function generateId() {
-  return Math.random().toString(36).substr(2, 9) + Date.now().toString(36);
-}
+const SUPABASE_URL = 'https://efykrzdxlfwbyhkcezaq.supabase.co'
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVmeWtyemR4bGZ3Ynloa2NlemFxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODAwNTU3ODEsImV4cCI6MjA5NTYzMTc4MX0.WyibUUER93V2KaAlr7L0DFUUbW8MsRhB1Rm2py3NpS8'
 
-function getCollection(name) {
-  try {
-    const raw = localStorage.getItem(`fsa_${name}`);
-    return raw ? JSON.parse(raw) : [];
-  } catch {
-    return [];
-  }
-}
+export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
 
-function saveCollection(name, data) {
-  localStorage.setItem(`fsa_${name}`, JSON.stringify(data));
+const TABLE_MAP = {
+  bars: 'bars',
+  products: 'products',
+  stockReports: 'stock_reports',
+  offeredItems: 'offered_items',
+  posSales: 'pos_sales',
+  productPrices: 'product_prices',
+  festivalSettings: 'festival_settings',
+  festivals: 'festivals',
+  appUsers: 'app_users',
 }
 
 function createEntity(collectionName) {
+  const table = TABLE_MAP[collectionName] || collectionName
+
   return {
-    list: (sortField, limit) => {
-      let items = getCollection(collectionName);
+    list: async (sortField, limit) => {
+      let query = supabase.from(table).select('*')
       if (sortField) {
-        const desc = sortField.startsWith('-');
-        const field = desc ? sortField.slice(1) : sortField;
-        items = [...items].sort((a, b) => {
-          const va = a[field] || '';
-          const vb = b[field] || '';
-          return desc ? vb.localeCompare(String(va)) : String(va).localeCompare(String(vb));
-        });
+        const desc = sortField.startsWith('-')
+        const field = desc ? sortField.slice(1) : sortField
+        query = query.order(field, { ascending: !desc })
+      } else {
+        query = query.order('created_date', { ascending: false })
       }
-      if (limit) items = items.slice(0, limit);
-      return Promise.resolve(items);
+      if (limit) query = query.limit(limit)
+      const { data, error } = await query
+      if (error) { console.error(error); return [] }
+      return data || []
     },
-    get: (id) => {
-      const items = getCollection(collectionName);
-      const item = items.find(i => i.id === id);
-      return Promise.resolve(item || null);
+
+    get: async (id) => {
+      const { data, error } = await supabase.from(table).select('*').eq('id', id).single()
+      if (error) { console.error(error); return null }
+      return data
     },
-    create: (data) => {
-      const items = getCollection(collectionName);
-      const newItem = {
-        ...data,
-        id: generateId(),
+
+    create: async (payload) => {
+      const { data, error } = await supabase.from(table).insert([{
+        ...payload,
         created_date: new Date().toISOString(),
         updated_date: new Date().toISOString(),
-      };
-      items.unshift(newItem);
-      saveCollection(collectionName, items);
-      return Promise.resolve(newItem);
+      }]).select().single()
+      if (error) { console.error(error); return null }
+      return data
     },
-    update: (id, data) => {
-      const items = getCollection(collectionName);
-      const idx = items.findIndex(i => i.id === id);
-      if (idx === -1) return Promise.reject(new Error('Not found'));
-      items[idx] = { ...items[idx], ...data, updated_date: new Date().toISOString() };
-      saveCollection(collectionName, items);
-      return Promise.resolve(items[idx]);
+
+    update: async (id, payload) => {
+      const { data, error } = await supabase.from(table).update({
+        ...payload,
+        updated_date: new Date().toISOString(),
+      }).eq('id', id).select().single()
+      if (error) { console.error(error); return null }
+      return data
     },
-    delete: (id) => {
-      const items = getCollection(collectionName);
-      const filtered = items.filter(i => i.id !== id);
-      saveCollection(collectionName, filtered);
-      return Promise.resolve(true);
+
+    delete: async (id) => {
+      const { error } = await supabase.from(table).delete().eq('id', id)
+      if (error) { console.error(error); return false }
+      return true
     },
-    filter: (query) => {
-      const items = getCollection(collectionName);
-      return Promise.resolve(items.filter(item => {
-        return Object.entries(query).every(([k, v]) => item[k] === v);
-      }));
-    }
-  };
+
+    filter: async (query) => {
+      let q = supabase.from(table).select('*')
+      Object.entries(query).forEach(([k, v]) => { q = q.eq(k, v) })
+      const { data, error } = await q
+      if (error) { console.error(error); return [] }
+      return data || []
+    },
+
+    filterByFestival: async (festivalId, sortField) => {
+      let q = supabase.from(table).select('*').eq('festival_id', festivalId)
+      if (sortField) {
+        const desc = sortField.startsWith('-')
+        const field = desc ? sortField.slice(1) : sortField
+        q = q.order(field, { ascending: !desc })
+      } else {
+        q = q.order('created_date', { ascending: false })
+      }
+      const { data, error } = await q
+      if (error) { console.error(error); return [] }
+      return data || []
+    },
+  }
 }
 
 export const db = {
@@ -82,6 +99,8 @@ export const db = {
   POSSales: createEntity('posSales'),
   ProductPrice: createEntity('productPrices'),
   FestivalSettings: createEntity('festivalSettings'),
-};
+  Festival: createEntity('festivals'),
+  AppUser: createEntity('appUsers'),
+}
 
-export default db;
+export default db

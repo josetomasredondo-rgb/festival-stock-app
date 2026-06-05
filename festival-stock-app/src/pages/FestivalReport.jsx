@@ -2,18 +2,25 @@ import { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
 import { ChevronLeft, Download } from "lucide-react";
 import db from "../lib/db";
+import { useAuth } from "../lib/AuthContext";
 
 const DAYS = ["Day 1", "Day 2", "Day 3", "Day 4", "Day 5"];
 
 export default function FestivalReport() {
+  const { currentFestival } = useAuth();
   const [bars, setBars] = useState([]);
   const [reports, setReports] = useState([]);
   const [loading, setLoading] = useState(true);
 
+  const festivalId = currentFestival?.id;
+
   useEffect(() => {
-    Promise.all([db.Bar.list(), db.StockReport.list("-created_date", 500)])
-      .then(([b, r]) => { setBars(b); setReports(r); setLoading(false); });
-  }, []);
+    if (!festivalId) { setLoading(false); return; }
+    Promise.all([
+      db.Bar.filterByFestival(festivalId),
+      db.StockReport.filterByFestival(festivalId, "-created_date"),
+    ]).then(([b, r]) => { setBars(b); setReports(r); setLoading(false); });
+  }, [festivalId]);
 
   const computeConsumed = (barId, day) => {
     const dayReports = reports.filter(r => r.bar_id === barId && r.festival_day === day);
@@ -32,7 +39,6 @@ export default function FestivalReport() {
     });
   };
 
-  // Aggregate totals across all bars and days
   const productTotals = {};
   bars.forEach(bar => {
     DAYS.forEach(day => {
@@ -63,7 +69,7 @@ export default function FestivalReport() {
         <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 mb-8">
           <div>
             <h1 className="text-3xl font-bold text-neutral-900">Relatório Final do Festival</h1>
-            <p className="text-neutral-400 mt-1">Resumo completo de stock em todos os bares e dias</p>
+            <p className="text-neutral-400 mt-1">{currentFestival?.name} · Resumo completo de stock em todos os bares e dias</p>
           </div>
           <button onClick={() => window.print()}
             className="print:hidden inline-flex items-center gap-2 px-4 py-2.5 bg-neutral-900 text-white rounded-xl text-sm font-medium hover:bg-neutral-700 transition-colors">

@@ -2,44 +2,71 @@ import { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
 import { ChevronLeft, Loader2, Plus, Trash2, CheckCircle } from "lucide-react";
 import db from "../lib/db";
- 
-const REPORT_TYPES = [
+import { useAuth } from "../lib/AuthContext";
+
+const ALL_REPORT_TYPES = [
   { value: "opening", label: "Contagem de Abertura", desc: "Stock inicial no início do dia (preenchido automaticamente do dia anterior)", color: "border-blue-400 bg-blue-50 text-blue-800" },
   { value: "delivery", label: "Entrega Recebida", desc: "Novo stock chegou durante o dia", color: "border-amber-400 bg-amber-50 text-amber-800" },
   { value: "night_delivery", label: "Entrega Noturna", desc: "Stock entregue durante a noite entre dias", color: "border-indigo-400 bg-indigo-50 text-indigo-800" },
   { value: "closing", label: "Contagem de Fecho", desc: "Stock final no fim do dia", color: "border-emerald-400 bg-emerald-50 text-emerald-800" },
 ];
- 
+
 const DAY_ORDER = ["Day 1", "Day 2", "Day 3", "Day 4", "Day 5"];
- 
+
 export default function SubmitReport() {
+  const { role, user, currentFestival } = useAuth();
   const [bars, setBars] = useState([]);
   const [products, setProducts] = useState([]);
   const [allReports, setAllReports] = useState([]);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
-  const [festivalClosed, setFestivalClosed] = useState(false);
   const [autoFillInfo, setAutoFillInfo] = useState(null);
   const today = new Date().toISOString().split("T")[0];
- 
+
+  const festivalId = currentFestival?.id;
+  const isClosed = currentFestival?.is_closed === true;
+
+  // For bar_leader: only their bar; for others: all festival bars
+  const isBarLeader = role === "bar_leader";
+  const isNightDelivery = role === "night_delivery";
+
+  // night_delivery can only submit night_delivery reports
+  const REPORT_TYPES = isNightDelivery
+    ? ALL_REPORT_TYPES.filter(t => t.value === "night_delivery")
+    : ALL_REPORT_TYPES;
+
   const [form, setForm] = useState({
     bar_id: "", bar_name: "", festival_day: "Day 1",
-    report_date: today, report_type: "", submitted_by: "", notes: "", items: []
+    report_date: today, report_type: isNightDelivery ? "night_delivery" : "", submitted_by: user?.name || "", notes: "", items: []
   });
- 
+
   useEffect(() => {
+    if (!festivalId) { setLoading(false); return; }
     Promise.all([
-      db.Bar.list(), db.Product.list(), db.FestivalSettings.list(), db.StockReport.list("-created_date", 500)
-    ]).then(([b, p, s, r]) => {
-      setBars(b.filter(bar => bar.is_active !== false));
+      db.Bar.filterByFestival(festivalId),
+      db.Product.list(),
+      db.StockReport.filterByFestival(festivalId, "-created_date"),
+    ]).then(([b, p, r]) => {
+      let activeBars = b.filter(bar => bar.is_active !== false);
+      // bar_leader: only their assigned bar
+      if (isBarLeader && user?.bar_id) {
+        activeBars = activeBars.filter(bar => bar.id === user.bar_id);
+      }
+      setBars(activeBars);
       setProducts(p);
-      setFestivalClosed(s[0]?.is_closed === true);
       setAllReports(r);
+      // Auto-select bar for bar_leader
+      if (isBarLeader && user?.bar_id) {
+        const myBar = activeBars.find(bar => bar.id === user.bar_id);
+        if (myBar) {
+          setForm(f => ({ ...f, bar_id: myBar.id, bar_name: myBar.name }));
+        }
+      }
       setLoading(false);
     });
-  }, []);
- 
+  }, [festivalId]);
+
   const computeAutoFillItems = (barId, festivalDay) => {
     const dayIndex = DAY_ORDER.indexOf(festivalDay);
     if (dayIndex <= 0) return null;
@@ -63,7 +90,7 @@ export default function SubmitReport() {
     });
     return { items: Object.values(productMap), prevDay, hasNightDelivery: nightDeliveries.length > 0 };
   };
- 
+
   const handleDayOrBarChange = (field, value) => {
     setForm(f => {
       const newForm = { ...f, [field]: value };
@@ -71,42 +98,30 @@ export default function SubmitReport() {
         const bar = bars.find(b => b.id === value);
         newForm.bar_name = bar?.name || "";
       }
-      // Re-populate items whenever bar changes (even if report type was picked first)
       const defaultItems = products.map(p => ({ product_id: p.id, product_name: p.name, unit: p.unit || "units", quantity: "", notes: "" }));
       if (field === "bar_id" && newForm.report_type) {
         if (newForm.report_type === "opening") {
           const autoFill = computeAutoFillItems(newForm.bar_id, newForm.festival_day);
-          if (autoFill) {
-            setAutoFillInfo(autoFill);
-            newForm.items = autoFill.items;
-          } else {
-            setAutoFillInfo(null);
-            newForm.items = defaultItems;
-          }
+          if (autoFill) { setAutoFillInfo(autoFill); newForm.items = autoFill.items; }
+          else { setAutoFillInfo(null); newForm.items = defaultItems; }
         } else {
           newForm.items = defaultItems;
         }
       } else if (field === "bar_id" && !newForm.report_type) {
-        // Bar selected but no type yet — pre-load products so they're ready
         newForm.items = defaultItems;
       }
       return newForm;
     });
   };
- 
+
   const handleReportTypeChange = (type) => {
     setForm(f => {
       const newForm = { ...f, report_type: type, items: [] };
       const defaultItems = products.map(p => ({ product_id: p.id, product_name: p.name, unit: p.unit || "units", quantity: "", notes: "" }));
       if (type === "opening" && f.bar_id) {
         const autoFill = computeAutoFillItems(f.bar_id, f.festival_day);
-        if (autoFill) {
-          setAutoFillInfo(autoFill);
-          newForm.items = autoFill.items;
-        } else {
-          setAutoFillInfo(null);
-          newForm.items = defaultItems;
-        }
+        if (autoFill) { setAutoFillInfo(autoFill); newForm.items = autoFill.items; }
+        else { setAutoFillInfo(null); newForm.items = defaultItems; }
       } else {
         setAutoFillInfo(null);
         newForm.items = defaultItems;
@@ -114,7 +129,7 @@ export default function SubmitReport() {
       return newForm;
     });
   };
- 
+
   const addItem = () => setForm(f => ({ ...f, items: [...f.items, { product_id: "", product_name: "", unit: "units", quantity: "", notes: "" }] }));
   const removeItem = (idx) => setForm(f => ({ ...f, items: f.items.filter((_, i) => i !== idx) }));
   const updateItem = (idx, field, value) => setForm(f => {
@@ -126,20 +141,34 @@ export default function SubmitReport() {
     }
     return { ...f, items };
   });
- 
+
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (festivalClosed) return;
+    if (isClosed) return;
     setSubmitting(true);
     const payload = {
       ...form,
+      festival_id: festivalId,
       items: form.items.map(i => ({ ...i, quantity: parseFloat(i.quantity) || 0 })).filter(i => i.product_name)
     };
     await db.StockReport.create(payload);
     setSubmitted(true);
     setSubmitting(false);
   };
- 
+
+  const resetForm = () => {
+    setSubmitted(false);
+    setAutoFillInfo(null);
+    const newItems = isBarLeader && user?.bar_id
+      ? { bar_id: user.bar_id, bar_name: bars[0]?.name || "" }
+      : { bar_id: "", bar_name: "" };
+    setForm({
+      ...newItems, festival_day: "Day 1", report_date: today,
+      report_type: isNightDelivery ? "night_delivery" : "",
+      submitted_by: user?.name || "", notes: "", items: []
+    });
+  };
+
   if (submitted) {
     return (
       <div className="min-h-screen bg-[#F7F7F5] flex items-center justify-center px-6">
@@ -150,7 +179,7 @@ export default function SubmitReport() {
           <h2 className="text-2xl font-bold text-neutral-900 mb-2">Relatório Submetido!</h2>
           <p className="text-neutral-400 mb-6">O teu relatório foi guardado com sucesso.</p>
           <div className="flex gap-3 justify-center">
-            <button onClick={() => { setSubmitted(false); setForm({ bar_id: "", bar_name: "", festival_day: "Day 1", report_date: today, report_type: "", submitted_by: "", notes: "", items: [] }); setAutoFillInfo(null); }}
+            <button onClick={resetForm}
               className="px-5 py-2.5 bg-neutral-900 text-white rounded-xl text-sm font-semibold hover:bg-neutral-700 transition-colors">
               Novo Relatório
             </button>
@@ -162,7 +191,7 @@ export default function SubmitReport() {
       </div>
     );
   }
- 
+
   return (
     <div className="min-h-screen bg-[#F7F7F5]">
       <div className="max-w-2xl mx-auto px-6 py-10">
@@ -171,28 +200,33 @@ export default function SubmitReport() {
         </Link>
         <div className="mb-8">
           <h1 className="text-3xl font-bold text-neutral-900">Relatório de Contagens</h1>
-          <p className="text-neutral-400 mt-1">Submeter stock do teu bar</p>
+          <p className="text-neutral-400 mt-1">Submeter stock do teu bar · {currentFestival?.name}</p>
         </div>
- 
-        {festivalClosed && (
+
+        {isClosed && (
           <div className="mb-6 px-5 py-3 bg-red-50 border border-red-200 rounded-2xl text-sm text-red-700">
             Festival fechado — não é possível submeter novos relatórios.
           </div>
         )}
- 
+
         {loading ? (
           <div className="flex justify-center py-20"><Loader2 className="w-6 h-6 animate-spin text-neutral-400" /></div>
         ) : (
           <form onSubmit={handleSubmit} className="space-y-6">
-            {/* Bar & Details FIRST */}
             <div className="bg-white rounded-2xl border border-neutral-100 p-6 space-y-4">
               <div>
                 <label className="block text-xs font-semibold uppercase tracking-widest text-neutral-400 mb-2">Bar</label>
-                <select required value={form.bar_id} onChange={e => handleDayOrBarChange("bar_id", e.target.value)}
-                  className="w-full border border-neutral-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-neutral-900 bg-white">
-                  <option value="">Seleciona um bar...</option>
-                  {bars.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
-                </select>
+                {isBarLeader ? (
+                  <div className="w-full border border-neutral-200 rounded-xl px-4 py-3 text-sm bg-neutral-50 text-neutral-700">
+                    {bars[0]?.name || "Sem bar atribuído"}
+                  </div>
+                ) : (
+                  <select required value={form.bar_id} onChange={e => handleDayOrBarChange("bar_id", e.target.value)}
+                    className="w-full border border-neutral-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-neutral-900 bg-white">
+                    <option value="">Seleciona um bar...</option>
+                    {bars.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
+                  </select>
+                )}
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
@@ -210,13 +244,12 @@ export default function SubmitReport() {
               </div>
               <div>
                 <label className="block text-xs font-semibold uppercase tracking-widest text-neutral-400 mb-2">O teu nome</label>
-                <input required type="text" placeholder="Nome do responsável do bar" value={form.submitted_by}
+                <input type="text" placeholder="Nome do responsável do bar" value={form.submitted_by}
                   onChange={e => setForm(f => ({ ...f, submitted_by: e.target.value }))}
                   className="w-full border border-neutral-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-neutral-900" />
               </div>
             </div>
- 
-            {/* Report Type SECOND — after bar is selected, products auto-populate */}
+
             <div>
               <label className="block text-xs font-semibold uppercase tracking-widest text-neutral-400 mb-3">Tipo de Relatório</label>
               <div className="space-y-2">
@@ -231,8 +264,7 @@ export default function SubmitReport() {
                 ))}
               </div>
             </div>
- 
-            {/* Items */}
+
             {form.report_type && (
               <div>
                 {autoFillInfo && form.report_type === "opening" && (
@@ -287,22 +319,21 @@ export default function SubmitReport() {
                 </div>
               </div>
             )}
- 
-            {/* Notes */}
+
             <div>
               <label className="block text-xs font-semibold uppercase tracking-widest text-neutral-400 mb-2">Notas Gerais</label>
               <textarea rows={3} placeholder="Problemas, comentários ou observações..." value={form.notes}
                 onChange={e => setForm(f => ({ ...f, notes: e.target.value }))}
                 className="w-full border border-neutral-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-neutral-900 resize-none" />
             </div>
- 
-            <button type="submit" disabled={submitting || !form.report_type || !form.bar_id || festivalClosed}
+
+            <button type="submit" disabled={submitting || !form.report_type || !form.bar_id || isClosed}
               className="w-full py-3.5 bg-neutral-900 text-white rounded-xl font-semibold text-sm hover:bg-neutral-700 transition-colors disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2">
               {submitting ? <><Loader2 className="w-4 h-4 animate-spin" /> A submeter...</> : "Submeter Relatório"}
             </button>
           </form>
         )}
       </div>
-    </div>  
+    </div>
   );
 }
