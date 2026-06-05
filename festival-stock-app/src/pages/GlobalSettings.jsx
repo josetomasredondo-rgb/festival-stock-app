@@ -424,43 +424,46 @@ export default function GlobalSettings() {
     return null;
   }
 
-  // ── Festival helpers ──────────────────────────────────────────────────────
-  // Update a festival's user_ids: add/remove userId from affected festivals
-  const syncUserFestivals = async (userId, newFestivalIds) => {
-    const prevFestivalIds = festivals.filter(f => (f.user_ids || []).includes(userId)).map(f => f.id);
-    const toAdd = newFestivalIds.filter(fid => !prevFestivalIds.includes(fid));
-    const toRemove = prevFestivalIds.filter(fid => !newFestivalIds.includes(fid));
+  // ── Re-fetch helpers (guarantees UI matches DB even if insert returns null) ──
+  const refreshFestivals = async () => setFestivals(await db.Festival.list());
+  const refreshBars      = async () => setBars(await db.Bar.list());
+  const refreshProducts  = async () => setProducts(await db.Product.list());
+  const refreshUsers     = async () => setUsers(await db.AppUser.list());
 
-    const updates = [];
-    for (const fid of toAdd) {
-      const fest = festivals.find(f => f.id === fid);
-      if (fest) updates.push(db.Festival.update(fid, { user_ids: [...(fest.user_ids || []), userId] }));
-    }
-    for (const fid of toRemove) {
-      const fest = festivals.find(f => f.id === fid);
-      if (fest) updates.push(db.Festival.update(fid, { user_ids: (fest.user_ids || []).filter(id => id !== userId) }));
-    }
-    const updatedFests = await Promise.all(updates);
-    setFestivals(prev => {
-      const map = {};
-      updatedFests.forEach(f => { if (f) map[f.id] = f; });
-      return prev.map(f => map[f.id] || f);
-    });
+  // ── Festival helpers ──────────────────────────────────────────────────────
+  const syncUserFestivals = async (userId, newFestivalIds) => {
+    // Re-fetch festivals fresh to avoid stale user_ids arrays
+    const latestFestivals = await db.Festival.list();
+    const prevFestivalIds = latestFestivals.filter(f => (f.user_ids || []).includes(userId)).map(f => f.id);
+    const toAdd    = newFestivalIds.filter(fid => !prevFestivalIds.includes(fid));
+    const toRemove = prevFestivalIds.filter(fid => !newFestivalIds.includes(fid));
+    const updates = [
+      ...toAdd.map(fid => {
+        const f = latestFestivals.find(x => x.id === fid);
+        return f ? db.Festival.update(fid, { user_ids: [...(f.user_ids || []), userId] }) : null;
+      }),
+      ...toRemove.map(fid => {
+        const f = latestFestivals.find(x => x.id === fid);
+        return f ? db.Festival.update(fid, { user_ids: (f.user_ids || []).filter(id => id !== userId) }) : null;
+      }),
+    ].filter(Boolean);
+    await Promise.all(updates);
+    await refreshFestivals();
   };
 
   const handleCreateFestival = async (form) => {
     setSavingFestival(true);
     const { num_days, day_names, bar_ids, product_ids, user_ids, ...rest } = form;
-    const created = await db.Festival.create({ ...rest, num_days, day_names, bar_ids: bar_ids || [], product_ids: product_ids || [], user_ids: user_ids || [], is_active: true, is_closed: false });
-    if (created) setFestivals(prev => [created, ...prev]);
+    await db.Festival.create({ ...rest, num_days, day_names, bar_ids: bar_ids || [], product_ids: product_ids || [], user_ids: user_ids || [], is_active: true, is_closed: false });
+    await refreshFestivals();
     setSavingFestival(false);
     setCreatingFestival(false);
   };
 
   const handleUpdateFestival = async (id, form) => {
     const { num_days, day_names, bar_ids, product_ids, user_ids, ...rest } = form;
-    const updated = await db.Festival.update(id, { ...rest, num_days, day_names, bar_ids: bar_ids || [], product_ids: product_ids || [], user_ids: user_ids || [] });
-    if (updated) setFestivals(prev => prev.map(f => f.id === id ? updated : f));
+    await db.Festival.update(id, { ...rest, num_days, day_names, bar_ids: bar_ids || [], product_ids: product_ids || [], user_ids: user_ids || [] });
+    await refreshFestivals();
   };
 
   const handleDeleteFestival = async (id) => {
@@ -471,25 +474,25 @@ export default function GlobalSettings() {
 
   const handleCloseFestival = async (id) => {
     if (!window.confirm("Fechar este festival?")) return;
-    const updated = await db.Festival.update(id, { is_closed: true, is_active: false });
-    if (updated) setFestivals(prev => prev.map(f => f.id === id ? updated : f));
+    await db.Festival.update(id, { is_closed: true, is_active: false });
+    await refreshFestivals();
   };
 
   const handleReopenFestival = async (id) => {
-    const updated = await db.Festival.update(id, { is_closed: false, is_active: true });
-    if (updated) setFestivals(prev => prev.map(f => f.id === id ? updated : f));
+    await db.Festival.update(id, { is_closed: false, is_active: true });
+    await refreshFestivals();
   };
 
   // ── Bars ──────────────────────────────────────────────────────────────────
   const addBar = async () => {
     if (!newBar.name.trim()) return;
-    const created = await db.Bar.create({ ...newBar, is_active: true });
-    if (created) setBars(prev => [created, ...prev]);
+    await db.Bar.create({ ...newBar, is_active: true });
+    await refreshBars();
     setNewBar({ name: "", leader_name: "", leader_email: "", location: "" });
   };
   const updateBar = async (id, data) => {
-    const updated = await db.Bar.update(id, data);
-    if (updated) setBars(prev => prev.map(b => b.id === id ? updated : b));
+    await db.Bar.update(id, data);
+    await refreshBars();
   };
   const deleteBar = async (id) => {
     if (!window.confirm("Eliminar este bar?")) return;
@@ -500,13 +503,13 @@ export default function GlobalSettings() {
   // ── Products ──────────────────────────────────────────────────────────────
   const addProduct = async () => {
     if (!newProduct.name.trim()) return;
-    const created = await db.Product.create({ ...newProduct, selling_price: parseFloat(newProduct.selling_price) || 0 });
-    if (created) setProducts(prev => [created, ...prev]);
+    await db.Product.create({ ...newProduct, selling_price: parseFloat(newProduct.selling_price) || 0 });
+    await refreshProducts();
     setNewProduct({ name: "", unit: "units", category: "other", selling_price: "" });
   };
   const updateProduct = async (id, data) => {
-    const updated = await db.Product.update(id, { ...data, selling_price: parseFloat(data.selling_price) || 0 });
-    if (updated) setProducts(prev => prev.map(p => p.id === id ? updated : p));
+    await db.Product.update(id, { ...data, selling_price: parseFloat(data.selling_price) || 0 });
+    await refreshProducts();
   };
   const deleteProduct = async (id) => {
     if (!window.confirm("Eliminar este produto?")) return;
@@ -518,20 +521,17 @@ export default function GlobalSettings() {
   const addUser = async () => {
     if (!newUser.name.trim() || !newUser.pin.trim()) return;
     const created = await db.AppUser.create({ ...newUser, bar_id: newUser.bar_id || null });
-    if (created) {
-      setUsers(prev => [created, ...prev]);
-      // Add this new user to selected festivals
-      if (newUserFestivalIds.length > 0) {
-        await syncUserFestivals(created.id, newUserFestivalIds);
-      }
+    await refreshUsers();
+    if (created && newUserFestivalIds.length > 0) {
+      await syncUserFestivals(created.id, newUserFestivalIds);
     }
     setNewUser({ name: "", pin: "", role: "bar_leader", bar_id: "" });
     setNewUserFestivalIds([]);
   };
 
   const updateUser = async (id, data, newFestivalIds) => {
-    const updated = await db.AppUser.update(id, data);
-    if (updated) setUsers(prev => prev.map(u => u.id === id ? updated : u));
+    await db.AppUser.update(id, data);
+    await refreshUsers();
     await syncUserFestivals(id, newFestivalIds);
   };
 
