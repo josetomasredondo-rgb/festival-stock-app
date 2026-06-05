@@ -17,8 +17,8 @@ export const ROLE_ACCESS = {
 };
 
 export const DEFAULT_SETTINGS = {
-  num_days: 1,
-  day_names: ["Dia 1"],
+  num_days: 5,
+  day_names: ["Day 1", "Day 2", "Day 3", "Day 4", "Day 5"],
   report_type_labels: {
     opening: "Contagem de Abertura",
     delivery: "Entrega Recebida",

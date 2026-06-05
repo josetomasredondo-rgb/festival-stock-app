@@ -28,11 +28,8 @@ export default function DailySheet() {
   };
 
   const festivalId = currentFestival?.id;
-  const activeDay = selectedDay || days[0] || "Dia 1";
-
-  useEffect(() => {
-    if (!selectedDay && days.length) setSelectedDay(days[0]);
-  }, [days.join(",")]);
+  // Ensure activeDay is always a valid day from the current list
+  const activeDay = (selectedDay && days.includes(selectedDay)) ? selectedDay : days[0];
 
   useEffect(() => {
     if (!festivalId) { setLoading(false); return; }
