@@ -1,4 +1,5 @@
-import { createContext, useContext, useState } from "react";
+import { createContext, useContext, useState, useEffect } from "react";
+import { supabase } from "./db";
 
 const AuthContext = createContext(null);
 
@@ -27,9 +28,6 @@ export const DEFAULT_SETTINGS = {
   },
 };
 
-// Reads day names and report type labels from the current festival.
-// num_days + day_names come from direct festival columns (set in GlobalSettings).
-// report_type_labels still live in festival.settings jsonb.
 export function useFestivalSettings() {
   const { currentFestival } = useContext(AuthContext);
   const numDays = currentFestival?.num_days || DEFAULT_SETTINGS.num_days;
@@ -56,6 +54,20 @@ export function AuthProvider({ children }) {
   const [currentFestival, setCurrentFestivalRaw] = useState(() => readSession("app_festival"));
 
   const role = user?.role || null;
+
+  // On mount, re-fetch the current festival from DB so day_names / bar_ids
+  // are always up-to-date (session storage can hold stale data).
+  useEffect(() => {
+    const cached = readSession("app_festival");
+    if (!cached?.id) return;
+    supabase.from("festivals").select("*").eq("id", cached.id).single()
+      .then(({ data }) => {
+        if (data) {
+          sessionStorage.setItem("app_festival", JSON.stringify(data));
+          setCurrentFestivalRaw(data);
+        }
+      });
+  }, []);
 
   const login = (u) => {
     sessionStorage.setItem("app_user", JSON.stringify(u));

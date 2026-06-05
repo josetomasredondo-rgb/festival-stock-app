@@ -477,9 +477,18 @@ export default function GlobalSettings() {
   };
 
   const handleDeleteFestival = async (id) => {
-    if (!window.confirm("Eliminar este festival?")) return;
-    await db.Festival.delete(id);
-    setFestivals(prev => prev.filter(f => f.id !== id));
+    if (!window.confirm("Eliminar este festival? Todos os relatórios associados serão eliminados. Esta ação não pode ser desfeita.")) return;
+    // Delete related records first to avoid FK constraint errors
+    const [reports, offered] = await Promise.all([
+      db.StockReport.filterByFestival(id),
+      db.OfferedItems.filterByFestival(id),
+    ]);
+    await Promise.all([
+      ...reports.map(r => db.StockReport.delete(r.id)),
+      ...offered.map(r => db.OfferedItems.delete(r.id)),
+    ]);
+    const ok = await db.Festival.delete(id);
+    if (ok) setFestivals(prev => prev.filter(f => f.id !== id));
   };
 
   const handleCloseFestival = async (id) => {
