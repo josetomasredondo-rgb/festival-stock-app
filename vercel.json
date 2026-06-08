@@ -1,0 +1,7 @@
+{
+  "buildCommand": "cd festival-stock-app && npm install && npm run build",
+  "outputDirectory": "festival-stock-app/dist",
+  "rewrites": [
+    { "source": "/(.*)", "destination": "/index.html" }
+  ]
+}
