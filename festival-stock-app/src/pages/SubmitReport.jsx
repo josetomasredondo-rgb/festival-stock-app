@@ -45,7 +45,7 @@ export default function SubmitReport() {
     : ALL_REPORT_TYPES;
 
   const [form, setForm] = useState({
-    bar_id: "", bar_name: "", festival_day: "Day 1",
+    bar_id: "", bar_name: "", festival_day: DAY_ORDER[0] || "Day 1",
     report_date: today, report_type: isNightDelivery ? "night_delivery" : "", submitted_by: user?.name || "", notes: "", items: []
   });
 
@@ -171,7 +171,7 @@ export default function SubmitReport() {
       ? { bar_id: user.bar_id, bar_name: bars[0]?.name || "" }
       : { bar_id: "", bar_name: "" };
     setForm({
-      ...newItems, festival_day: "Day 1", report_date: today,
+      ...newItems, festival_day: DAY_ORDER[0] || "Day 1", report_date: today,
       report_type: isNightDelivery ? "night_delivery" : "",
       submitted_by: user?.name || "", notes: "", items: []
     });
