@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { BarChart2, ClipboardList, Package, ArrowRight, Lock, FileText } from "lucide-react";
+import { BarChart2, ClipboardList, Package, ArrowRight, Lock, FileText, Warehouse, ArrowLeftRight } from "lucide-react";
 import db, { getFestivalBars } from "../lib/db";
 import { useAuth, ROLE_ACCESS, useFestivalSettings } from "../lib/AuthContext";
 
@@ -10,6 +10,7 @@ export default function Dashboard() {
   const navigate = useNavigate();
   const [bars, setBars] = useState([]);
   const [reports, setReports] = useState([]);
+  const [movements, setMovements] = useState([]);
   const [loading, setLoading] = useState(true);
 
   const festivalId = currentFestival?.id;
@@ -20,9 +21,11 @@ export default function Dashboard() {
     Promise.all([
       getFestivalBars(currentFestival),
       db.StockReport.filterByFestival(festivalId, "-created_date"),
-    ]).then(([b, r]) => {
+      db.Movement.filterByFestival(festivalId, "-created_date"),
+    ]).then(([b, r, m]) => {
       setBars(b);
       setReports(r.slice(0, 20));
+      setMovements(m.slice(0, 20));
       setLoading(false);
     });
   }, [festivalId]);
@@ -30,10 +33,14 @@ export default function Dashboard() {
   const allowed = ROLE_ACCESS[role] || [];
   const today = new Date().toISOString().split("T")[0];
   const todayReports = reports.filter(r => r.report_date === today);
+  const todayMovements = movements.filter(m => m.created_date?.startsWith(today));
+  const canSeeMovements = allowed.includes("Movimentos");
 
   const allCards = [
     { key: "SubmitReport", title: "Relatório de Contagens", description: "Contagem de abertura, entrega ou fecho de um bar", icon: ClipboardList, color: "from-violet-500 to-purple-600", light: "bg-violet-50 text-violet-700" },
     { key: "DailySheet", title: "Folha Diária", description: "Ver todos os dados de stock dos bares para qualquer dia", icon: BarChart2, color: "from-teal-500 to-cyan-600", light: "bg-teal-50 text-teal-700" },
+    { key: "Warehouse", title: "Armazém", description: "Stock atual do armazém e reabastecimentos", icon: Warehouse, color: "from-emerald-500 to-teal-600", light: "bg-emerald-50 text-emerald-700" },
+    { key: "Movimentos", title: "Movimentos", description: "Transferências entre armazém e bares ou entre bares", icon: ArrowLeftRight, color: "from-purple-500 to-violet-600", light: "bg-purple-50 text-purple-700" },
     { key: "Setup", title: "Gerir Bares e Produtos", description: "Configurar bares, responsáveis e catálogo de produtos", icon: Package, color: "from-orange-500 to-amber-500", light: "bg-orange-50 text-orange-700" },
     { key: "FestivalReport", title: "Relatório Final", description: "Ver o resumo completo do festival em todos os bares e dias", icon: FileText, color: "from-slate-600 to-slate-800", light: "bg-slate-100 text-slate-700" },
     { key: "Reports", title: "Ver e Editar Relatórios", description: "Ver, filtrar e editar qualquer relatório de stock submetido", icon: ClipboardList, color: "from-rose-500 to-pink-600", light: "bg-rose-50 text-rose-700" },
@@ -42,6 +49,8 @@ export default function Dashboard() {
   const cards = allCards.filter(c => allowed.includes(c.key));
 
   const typeColors = { opening: "bg-blue-100 text-blue-700", delivery: "bg-amber-100 text-amber-700", night_delivery: "bg-indigo-100 text-indigo-700", closing: "bg-emerald-100 text-emerald-700" };
+  const movTypeColors = { warehouse_to_bar: "bg-emerald-100 text-emerald-700", bar_to_bar: "bg-purple-100 text-purple-700", restock: "bg-blue-100 text-blue-700" };
+  const movTypeLabels = { warehouse_to_bar: "Arm→Bar", bar_to_bar: "Bar→Bar", restock: "Reabastecimento" };
 
   return (
     <div className="min-h-screen bg-[#F7F7F5]">
@@ -72,7 +81,7 @@ export default function Dashboard() {
         )}
 
         {!loading && festivalId && (
-          <div className="grid grid-cols-3 gap-4 mb-8">
+          <div className={`grid gap-4 mb-8 ${canSeeMovements ? "grid-cols-4" : "grid-cols-3"}`}>
             <div className="bg-white rounded-2xl border border-neutral-100 p-5 shadow-sm">
               <div className="text-3xl font-bold text-neutral-900">{bars.filter(b => b.is_active !== false).length}</div>
               <div className="text-sm text-neutral-400 mt-1">Bares Ativos</div>
@@ -81,6 +90,12 @@ export default function Dashboard() {
               <div className="text-3xl font-bold text-neutral-900">{todayReports.length}</div>
               <div className="text-sm text-neutral-400 mt-1">Relatórios Hoje</div>
             </div>
+            {canSeeMovements && (
+              <div className="bg-white rounded-2xl border border-neutral-100 p-5 shadow-sm">
+                <div className="text-3xl font-bold text-neutral-900">{todayMovements.length}</div>
+                <div className="text-sm text-neutral-400 mt-1">Movimentos Hoje</div>
+              </div>
+            )}
             <div className="bg-white rounded-2xl border border-neutral-100 p-5 shadow-sm">
               <div className="text-3xl font-bold text-neutral-900">{reports.length}</div>
               <div className="text-sm text-neutral-400 mt-1">Total Relatórios</div>
@@ -108,7 +123,7 @@ export default function Dashboard() {
         </div>
 
         {reports.length > 0 && (
-          <div>
+          <div className="mb-8">
             <h2 className="text-xs font-semibold uppercase tracking-widest text-neutral-400 mb-4">Relatórios Recentes</h2>
             <div className="bg-white rounded-2xl border border-neutral-100 shadow-sm overflow-hidden">
               {reports.slice(0, 5).map((r, i) => (
@@ -119,6 +134,25 @@ export default function Dashboard() {
                   <div className="min-w-0 flex-1">
                     <div className="font-medium text-neutral-900 truncate">{r.bar_name}</div>
                     <div className="text-xs text-neutral-400">{r.festival_day} · {r.report_date}{r.submitted_by ? ` · por ${r.submitted_by}` : ""}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {canSeeMovements && movements.length > 0 && (
+          <div>
+            <h2 className="text-xs font-semibold uppercase tracking-widest text-neutral-400 mb-4">Movimentos Recentes</h2>
+            <div className="bg-white rounded-2xl border border-neutral-100 shadow-sm overflow-hidden">
+              {movements.slice(0, 5).map((m, i) => (
+                <div key={m.id} className={`flex items-center gap-4 px-6 py-4 ${i < Math.min(movements.length, 5) - 1 ? "border-b border-neutral-50" : ""}`}>
+                  <span className={`text-xs font-medium px-2 py-0.5 rounded-full shrink-0 ${movTypeColors[m.type] || "bg-neutral-100 text-neutral-600"}`}>
+                    {movTypeLabels[m.type] || m.type}
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <div className="font-medium text-neutral-900 truncate">{m.origin_name} → {m.destination_name}</div>
+                    <div className="text-xs text-neutral-400">{m.festival_day}{m.submitted_by ? ` · por ${m.submitted_by}` : ""}</div>
                   </div>
                 </div>
               ))}

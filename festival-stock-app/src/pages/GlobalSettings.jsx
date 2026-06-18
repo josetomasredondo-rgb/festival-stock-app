@@ -52,11 +52,10 @@ function MultiSelect({ label, options, selectedIds, onAdd, onRemove, color, getL
 }
 
 // ── Festival form (create + edit) ─────────────────────────────────────────────
-function FestivalForm({ bars, products, users, onSave, onCancel, initial, saving }) {
+function FestivalForm({ bars, products, users, existingWarehouses, onSave, onCancel, initial, saving }) {
   const blank = { name: "", start_date: "", end_date: "", num_days: 1, day_names: ["Dia 1"], bar_ids: [], product_ids: [], user_ids: [] };
   const [form, setForm] = useState(() => {
     if (!initial) return blank;
-    // Guard against null arrays returned by Supabase for existing rows
     return {
       ...blank,
       ...initial,
@@ -69,6 +68,13 @@ function FestivalForm({ bars, products, users, onSave, onCancel, initial, saving
     };
   });
 
+  const [formWarehouses, setFormWarehouses] = useState(() => {
+    if (existingWarehouses?.length) {
+      return existingWarehouses.map(w => ({ id: w.id, name: w.name, initial_stock: w.initial_stock || [] }));
+    }
+    return [{ id: undefined, name: "Armazém Central", initial_stock: [] }];
+  });
+
   const handleNumDays = (n) => {
     const num = Math.max(1, Math.min(15, Number(n) || 1));
     setForm(f => ({
@@ -79,6 +85,27 @@ function FestivalForm({ bars, products, users, onSave, onCancel, initial, saving
 
   const addId = (field, id) => setForm(f => ({ ...f, [field]: [...(f[field] || []), id] }));
   const removeId = (field, id) => setForm(f => ({ ...f, [field]: (f[field] || []).filter(x => x !== id) }));
+
+  const updateWarehouseStock = (whIndex, product, qty) => {
+    setFormWarehouses(prev => prev.map((wh, wi) => {
+      if (wi !== whIndex) return wh;
+      const existing = (wh.initial_stock || []).find(s => s.product_id === product.id);
+      let newStock;
+      if (existing) {
+        newStock = (wh.initial_stock || []).map(s =>
+          s.product_id === product.id ? { ...s, quantity: Number(qty) || 0 } : s
+        );
+      } else {
+        newStock = [
+          ...(wh.initial_stock || []),
+          { product_id: product.id, product_name: product.name, unit: product.unit || "units", quantity: Number(qty) || 0 }
+        ];
+      }
+      return { ...wh, initial_stock: newStock };
+    }));
+  };
+
+  const selectedProducts = products.filter(p => form.product_ids.includes(p.id));
 
   return (
     <div className="space-y-4">
@@ -137,12 +164,63 @@ function FestivalForm({ bars, products, users, onSave, onCancel, initial, saving
         onAdd={id => addId("user_ids", id)} onRemove={id => removeId("user_ids", id)}
         color="purple" getLabel={u => `${u.name} · ${ROLE_LABELS[u.role] || u.role}`} />
 
+      {/* ── Armazéns ── */}
+      <div className="space-y-3">
+        <div className="flex items-center justify-between">
+          <label className="block text-xs font-semibold uppercase tracking-widest text-neutral-400">Armazéns</label>
+          <button type="button"
+            onClick={() => setFormWarehouses(p => [...p, { id: undefined, name: "", initial_stock: [] }])}
+            className="text-xs font-medium text-neutral-500 hover:text-neutral-900 flex items-center gap-1 transition-colors">
+            <Plus className="w-3.5 h-3.5" /> Adicionar
+          </button>
+        </div>
+        {formWarehouses.map((wh, wi) => (
+          <div key={wi} className="border border-neutral-200 rounded-xl p-4 space-y-3 bg-neutral-50">
+            <div className="flex items-center gap-3">
+              <input type="text" value={wh.name}
+                onChange={e => setFormWarehouses(p => p.map((w, i) => i === wi ? { ...w, name: e.target.value } : w))}
+                placeholder="Nome do armazém"
+                className="flex-1 border border-neutral-200 rounded-xl px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-neutral-900" />
+              {formWarehouses.length > 1 && (
+                <button type="button"
+                  onClick={() => setFormWarehouses(p => p.filter((_, i) => i !== wi))}
+                  className="p-1.5 text-neutral-400 hover:text-red-500 transition-colors">
+                  <Trash2 className="w-4 h-4" />
+                </button>
+              )}
+            </div>
+            {selectedProducts.length > 0 && (
+              <div>
+                <div className="text-xs text-neutral-400 mb-2">Stock inicial por produto:</div>
+                <div className="space-y-1.5">
+                  {selectedProducts.map(p => {
+                    const qty = (wh.initial_stock || []).find(s => s.product_id === p.id)?.quantity ?? 0;
+                    return (
+                      <div key={p.id} className="flex items-center gap-3">
+                        <span className="text-sm text-neutral-700 flex-1">{p.name}</span>
+                        <input type="number" min="0" value={qty}
+                          onChange={e => updateWarehouseStock(wi, p, e.target.value)}
+                          className="w-20 border border-neutral-200 rounded-xl px-2 py-1.5 text-sm text-center bg-white focus:outline-none focus:ring-2 focus:ring-neutral-900" />
+                        <span className="text-xs text-neutral-400 w-12">{p.unit || "units"}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+            {selectedProducts.length === 0 && (
+              <div className="text-xs text-neutral-400">Adiciona produtos ao festival para configurar o stock inicial.</div>
+            )}
+          </div>
+        ))}
+      </div>
+
       <div className="flex gap-2 pt-1">
         <button type="button" onClick={onCancel}
           className="flex-1 py-2.5 border border-neutral-200 rounded-xl text-sm font-medium text-neutral-600 hover:bg-neutral-50">
           Cancelar
         </button>
-        <button type="button" onClick={() => onSave(form)}
+        <button type="button" onClick={() => onSave(form, formWarehouses)}
           disabled={saving || !form.name.trim()}
           className="flex-1 py-2.5 bg-neutral-900 text-white rounded-xl text-sm font-semibold hover:bg-neutral-700 disabled:opacity-40 flex items-center justify-center gap-2">
           {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
@@ -231,11 +309,9 @@ function ProductCard({ product, onUpdate, onDelete }) {
 }
 
 // ── User card ─────────────────────────────────────────────────────────────────
-// festivalIds = festivals where this user is currently assigned (festival.user_ids contains user.id)
 function UserCard({ appUser, bars, festivals, onUpdate, onDelete }) {
   const [editing, setEditing] = useState(false);
   const [form, setForm] = useState({ name: appUser.name, pin: appUser.pin, role: appUser.role, bar_id: appUser.bar_id || "" });
-  // Which festivals this user belongs to
   const [assignedFestivalIds, setAssignedFestivalIds] = useState(
     festivals.filter(f => (f.user_ids || []).includes(appUser.id)).map(f => f.id)
   );
@@ -275,8 +351,6 @@ function UserCard({ appUser, bars, festivals, onUpdate, onDelete }) {
           </div>
         )}
       </div>
-
-      {/* Festival assignment */}
       <div>
         <label className="block text-xs font-semibold uppercase tracking-widest text-neutral-400 mb-2">Festivais</label>
         {assignedFestivalIds.length > 0 && (
@@ -297,7 +371,6 @@ function UserCard({ appUser, bars, festivals, onUpdate, onDelete }) {
           ))}
         </select>
       </div>
-
       <div className="flex gap-2">
         <button onClick={save} className="flex items-center gap-1.5 px-3 py-1.5 bg-neutral-900 text-white rounded-lg text-xs font-medium hover:bg-neutral-700"><Check className="w-3.5 h-3.5" /> Guardar</button>
         <button onClick={() => setEditing(false)} className="flex items-center gap-1.5 px-3 py-1.5 border border-neutral-200 rounded-lg text-xs font-medium text-neutral-600 hover:bg-neutral-50"><X className="w-3.5 h-3.5" /> Cancelar</button>
@@ -326,13 +399,13 @@ function UserCard({ appUser, bars, festivals, onUpdate, onDelete }) {
 }
 
 // ── Festival item ─────────────────────────────────────────────────────────────
-function FestivalItem({ festival, bars, products, users, onUpdate, onDelete, onClose, onReopen }) {
+function FestivalItem({ festival, bars, products, users, existingWarehouses, onUpdate, onDelete, onClose, onReopen }) {
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
 
-  const handleSave = async (form) => {
+  const handleSave = async (form, formWarehouses) => {
     setSaving(true);
-    await onUpdate(festival.id, form);
+    await onUpdate(festival.id, form, formWarehouses);
     setSaving(false);
     setEditing(false);
   };
@@ -355,6 +428,7 @@ function FestivalItem({ festival, bars, products, users, onUpdate, onDelete, onC
             {festival.start_date && (
               <div className="text-xs text-neutral-400 mt-0.5">
                 {festival.start_date}{festival.end_date ? ` → ${festival.end_date}` : ""} · {festival.num_days || 1} dia{(festival.num_days || 1) !== 1 ? "s" : ""}
+                {existingWarehouses?.length > 0 && ` · ${existingWarehouses.length} armazém${existingWarehouses.length !== 1 ? "éns" : ""}`}
               </div>
             )}
             {!editing && (
@@ -383,6 +457,7 @@ function FestivalItem({ festival, bars, products, users, onUpdate, onDelete, onC
       {editing && (
         <div className="border-t border-neutral-100 p-4 bg-neutral-50">
           <FestivalForm bars={bars} products={products} users={users}
+            existingWarehouses={existingWarehouses}
             initial={festival} saving={saving}
             onSave={handleSave}
             onCancel={() => setEditing(false)} />
@@ -405,6 +480,7 @@ export default function GlobalSettings() {
   const [products, setProducts] = useState([]);
   const [users, setUsers] = useState([]);
   const [festivals, setFestivals] = useState([]);
+  const [warehouses, setWarehouses] = useState([]);
   const [loading, setLoading] = useState(true);
   const [creatingFestival, setCreatingFestival] = useState(false);
   const [savingFestival, setSavingFestival] = useState(false);
@@ -415,8 +491,8 @@ export default function GlobalSettings() {
   const [newUserFestivalIds, setNewUserFestivalIds] = useState([]);
 
   useEffect(() => {
-    Promise.all([db.Bar.list(), db.Product.list(), db.AppUser.list(), db.Festival.list()])
-      .then(([b, p, u, f]) => { setBars(b); setProducts(p); setUsers(u); setFestivals(f); setLoading(false); });
+    Promise.all([db.Bar.list(), db.Product.list(), db.AppUser.list(), db.Festival.list(), db.Warehouse.list()])
+      .then(([b, p, u, f, w]) => { setBars(b); setProducts(p); setUsers(u); setFestivals(f); setWarehouses(w); setLoading(false); });
   }, []);
 
   if (role !== "manager") {
@@ -424,12 +500,10 @@ export default function GlobalSettings() {
     return null;
   }
 
-  // ── Re-fetch helpers (guarantees UI matches DB even if insert returns null) ──
+  // ── Re-fetch helpers ──────────────────────────────────────────────────────
   const refreshFestivals = async (updatedId) => {
     const fresh = await db.Festival.list();
     setFestivals(fresh);
-    // Keep currentFestival in sync with the DB — critical so SubmitReport
-    // and DailySheet always see the latest day_names/bar_ids etc.
     if (updatedId && currentFestival?.id === updatedId) {
       const updated = fresh.find(f => f.id === updatedId);
       if (updated) setCurrentFestival(updated);
@@ -439,10 +513,10 @@ export default function GlobalSettings() {
   const refreshBars      = async () => setBars(await db.Bar.list());
   const refreshProducts  = async () => setProducts(await db.Product.list());
   const refreshUsers     = async () => setUsers(await db.AppUser.list());
+  const refreshWarehouses = async () => setWarehouses(await db.Warehouse.list());
 
   // ── Festival helpers ──────────────────────────────────────────────────────
   const syncUserFestivals = async (userId, newFestivalIds) => {
-    // Re-fetch festivals fresh to avoid stale user_ids arrays
     const latestFestivals = await db.Festival.list();
     const prevFestivalIds = latestFestivals.filter(f => (f.user_ids || []).includes(userId)).map(f => f.id);
     const toAdd    = newFestivalIds.filter(fid => !prevFestivalIds.includes(fid));
@@ -461,34 +535,66 @@ export default function GlobalSettings() {
     await refreshFestivals();
   };
 
-  const handleCreateFestival = async (form) => {
+  const syncFestivalWarehouses = async (festivalId, formWarehouses) => {
+    const existing = warehouses.filter(w => w.festival_id === festivalId);
+    const formIds = (formWarehouses || []).map(w => w.id).filter(Boolean);
+
+    for (const wh of (formWarehouses || [])) {
+      if (wh.id) {
+        await db.Warehouse.update(wh.id, { name: wh.name, initial_stock: wh.initial_stock || [] });
+      } else {
+        await db.Warehouse.create({ festival_id: festivalId, name: wh.name || "Armazém Central", initial_stock: wh.initial_stock || [] });
+      }
+    }
+    for (const ew of existing) {
+      if (!formIds.includes(ew.id)) {
+        await db.Warehouse.delete(ew.id);
+      }
+    }
+    await refreshWarehouses();
+  };
+
+  const handleCreateFestival = async (form, formWarehouses) => {
     setSavingFestival(true);
     const { num_days, day_names, bar_ids, product_ids, user_ids, ...rest } = form;
-    await db.Festival.create({ ...rest, num_days, day_names, bar_ids: bar_ids || [], product_ids: product_ids || [], user_ids: user_ids || [], is_active: true, is_closed: false });
+    const created = await db.Festival.create({ ...rest, num_days, day_names, bar_ids: bar_ids || [], product_ids: product_ids || [], user_ids: user_ids || [], is_active: true, is_closed: false });
+    if (created?.id) {
+      for (const wh of (formWarehouses || [])) {
+        await db.Warehouse.create({ festival_id: created.id, name: wh.name || "Armazém Central", initial_stock: wh.initial_stock || [] });
+      }
+      await refreshWarehouses();
+    }
     await refreshFestivals();
     setSavingFestival(false);
     setCreatingFestival(false);
   };
 
-  const handleUpdateFestival = async (id, form) => {
+  const handleUpdateFestival = async (id, form, formWarehouses) => {
     const { num_days, day_names, bar_ids, product_ids, user_ids, ...rest } = form;
     await db.Festival.update(id, { ...rest, num_days, day_names, bar_ids: bar_ids || [], product_ids: product_ids || [], user_ids: user_ids || [] });
+    await syncFestivalWarehouses(id, formWarehouses);
     await refreshFestivals(id);
   };
 
   const handleDeleteFestival = async (id) => {
-    if (!window.confirm("Eliminar este festival? Todos os relatórios associados serão eliminados. Esta ação não pode ser desfeita.")) return;
-    // Delete related records first to avoid FK constraint errors
-    const [reports, offered] = await Promise.all([
+    if (!window.confirm("Eliminar este festival? Todos os relatórios e movimentos associados serão eliminados. Esta ação não pode ser desfeita.")) return;
+    const [reports, offered, festWarehouses, festMovements] = await Promise.all([
       db.StockReport.filterByFestival(id),
       db.OfferedItems.filterByFestival(id),
+      db.Warehouse.filterByFestival(id),
+      db.Movement.filterByFestival(id),
     ]);
     await Promise.all([
       ...reports.map(r => db.StockReport.delete(r.id)),
       ...offered.map(r => db.OfferedItems.delete(r.id)),
+      ...festWarehouses.map(w => db.Warehouse.delete(w.id)),
+      ...festMovements.map(m => db.Movement.delete(m.id)),
     ]);
     const ok = await db.Festival.delete(id);
-    if (ok) setFestivals(prev => prev.filter(f => f.id !== id));
+    if (ok) {
+      setFestivals(prev => prev.filter(f => f.id !== id));
+      setWarehouses(prev => prev.filter(w => w.festival_id !== id));
+    }
   };
 
   const handleCloseFestival = async (id) => {
@@ -509,10 +615,7 @@ export default function GlobalSettings() {
     await refreshBars();
     setNewBar({ name: "", leader_name: "", leader_email: "", location: "" });
   };
-  const updateBar = async (id, data) => {
-    await db.Bar.update(id, data);
-    await refreshBars();
-  };
+  const updateBar = async (id, data) => { await db.Bar.update(id, data); await refreshBars(); };
   const deleteBar = async (id) => {
     if (!window.confirm("Eliminar este bar?")) return;
     await db.Bar.delete(id);
@@ -597,6 +700,7 @@ export default function GlobalSettings() {
                   <div className="bg-white rounded-2xl border border-neutral-100 shadow-sm p-5">
                     <div className="text-xs font-semibold uppercase tracking-widest text-neutral-400 mb-4">Novo Festival</div>
                     <FestivalForm bars={bars} products={products} users={users}
+                      existingWarehouses={[]}
                       saving={savingFestival}
                       onSave={handleCreateFestival}
                       onCancel={() => setCreatingFestival(false)} />
@@ -604,6 +708,7 @@ export default function GlobalSettings() {
                 )}
                 {festivals.map(f => (
                   <FestivalItem key={f.id} festival={f} bars={bars} products={products} users={users}
+                    existingWarehouses={warehouses.filter(w => w.festival_id === f.id)}
                     onUpdate={handleUpdateFestival} onDelete={handleDeleteFestival}
                     onClose={handleCloseFestival} onReopen={handleReopenFestival} />
                 ))}
@@ -699,8 +804,6 @@ export default function GlobalSettings() {
                       </div>
                     )}
                   </div>
-
-                  {/* Festival assignment for new user */}
                   <div className="mt-3">
                     <label className="block text-xs font-semibold uppercase tracking-widest text-neutral-400 mb-2">Festivais</label>
                     {newUserFestivalIds.length > 0 && (
@@ -721,7 +824,6 @@ export default function GlobalSettings() {
                       ))}
                     </select>
                   </div>
-
                   <button onClick={addUser} disabled={!newUser.name.trim() || !newUser.pin.trim()}
                     className="mt-3 flex items-center gap-2 px-4 py-2 bg-neutral-900 text-white rounded-xl text-sm font-medium hover:bg-neutral-700 transition-colors disabled:opacity-40">
                     <Plus className="w-4 h-4" /> Adicionar Utilizador

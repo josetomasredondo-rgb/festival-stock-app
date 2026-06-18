@@ -117,6 +117,8 @@ export const db = {
   FestivalSettings: createEntity('festivalSettings'),
   Festival: createEntity('festivals'),
   AppUser: createEntity('appUsers'),
+  Warehouse: createEntity('warehouses'),
+  Movement: createEntity('movements'),
 }
 
 // Bars are now global — get festival bars via bar_ids array

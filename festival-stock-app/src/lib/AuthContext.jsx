@@ -12,9 +12,9 @@ export const ROLE_LABELS = {
 
 export const ROLE_ACCESS = {
   bar_leader: ["Dashboard", "SubmitReport", "DailySheet"],
-  night_delivery: ["Dashboard", "SubmitReport", "DailySheet"],
-  event_coordinator: ["Dashboard", "SubmitReport", "DailySheet", "Reports", "FestivalReport", "Setup"],
-  manager: ["Dashboard", "SubmitReport", "DailySheet", "Reports", "FestivalReport", "Setup"],
+  night_delivery: ["Dashboard", "SubmitReport", "DailySheet", "Movimentos"],
+  event_coordinator: ["Dashboard", "SubmitReport", "DailySheet", "Reports", "FestivalReport", "Setup", "Warehouse", "Movimentos"],
+  manager: ["Dashboard", "SubmitReport", "DailySheet", "Reports", "FestivalReport", "Setup", "Warehouse", "Movimentos"],
 };
 
 export const DEFAULT_SETTINGS = {

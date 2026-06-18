@@ -10,9 +10,11 @@ import DailySheet from "./pages/DailySheet";
 import Reports from "./pages/Reports";
 import FestivalReport from "./pages/FestivalReport";
 import Setup from "./pages/Setup";
+import Warehouse from "./pages/Warehouse";
+import Movimentos from "./pages/Movimentos";
 
 const ALL_PAGES = {
-  Dashboard, SubmitReport, DailySheet, Reports, FestivalReport, Setup
+  Dashboard, SubmitReport, DailySheet, Reports, FestivalReport, Setup, Warehouse, Movimentos
 };
 
 function AppRoutes() {

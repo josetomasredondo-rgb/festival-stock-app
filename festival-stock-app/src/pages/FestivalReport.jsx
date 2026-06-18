@@ -10,6 +10,8 @@ export default function FestivalReport() {
   const DAYS = dayNames;
   const [bars, setBars] = useState([]);
   const [reports, setReports] = useState([]);
+  const [movements, setMovements] = useState([]);
+  const [warehouses, setWarehouses] = useState([]);
   const [loading, setLoading] = useState(true);
 
   const festivalId = currentFestival?.id;
@@ -19,26 +21,54 @@ export default function FestivalReport() {
     Promise.all([
       getFestivalBars(currentFestival),
       db.StockReport.filterByFestival(festivalId, "-created_date"),
-    ]).then(([b, r]) => { setBars(b); setReports(r); setLoading(false); });
+      db.Movement.filterByFestival(festivalId),
+      db.Warehouse.filterByFestival(festivalId),
+    ]).then(([b, r, m, w]) => { setBars(b); setReports(r); setMovements(m); setWarehouses(w); setLoading(false); });
   }, [festivalId]);
 
+  // Consumption formula: Abertura + Entradas - Saídas - Fecho
+  // Entradas = deliveries + incoming movements; Saídas = outgoing movements
   const computeConsumed = (barId, day) => {
     const dayReports = reports.filter(r => r.bar_id === barId && r.festival_day === day);
     const opening = dayReports.find(r => r.report_type === "opening");
-    const deliveries = dayReports.filter(r => r.report_type === "delivery");
+    const deliveries = dayReports.filter(r => ["delivery", "night_delivery"].includes(r.report_type));
     const closing = dayReports.find(r => r.report_type === "closing");
-    const allProducts = [...new Set([...(opening?.items||[]), ...deliveries.flatMap(d=>d.items||[]), ...(closing?.items||[])].map(i=>i.product_name))].filter(Boolean);
+    const dayMovements = movements.filter(m => m.festival_day === day);
+    const incomingMov = dayMovements.filter(m => m.destination_type === "bar" && m.destination_id === barId);
+    const outgoingMov = dayMovements.filter(m => m.origin_type === "bar" && m.origin_id === barId);
+
+    const allProducts = [...new Set([
+      ...(opening?.items || []),
+      ...deliveries.flatMap(d => d.items || []),
+      ...(closing?.items || []),
+      ...incomingMov.flatMap(m => m.items || []),
+      ...outgoingMov.flatMap(m => m.items || []),
+    ].map(i => i.product_name))].filter(Boolean);
+
     return allProducts.map(name => {
-      const openQty = (opening?.items||[]).find(i=>i.product_name===name)?.quantity ?? null;
-      const delivQty = deliveries.reduce((s,d) => { const f=(d.items||[]).find(i=>i.product_name===name); return s+(f?Number(f.quantity)||0:0); }, 0);
-      const closeQty = (closing?.items||[]).find(i=>i.product_name===name)?.quantity ?? null;
-      const unit = [...(opening?.items||[]), ...(closing?.items||[])].find(i=>i.product_name===name)?.unit || "";
+      const openQty = (opening?.items || []).find(i => i.product_name === name)?.quantity ?? null;
+      const delivQty = deliveries.reduce((s, d) => {
+        const f = (d.items || []).find(i => i.product_name === name);
+        return s + (f ? Number(f.quantity) || 0 : 0);
+      }, 0);
+      const incomingMovQty = incomingMov.reduce((s, m) => {
+        const f = (m.items || []).find(i => i.product_name === name);
+        return s + (f ? Number(f.quantity) || 0 : 0);
+      }, 0);
+      const entradas = delivQty + incomingMovQty;
+      const saidas = outgoingMov.reduce((s, m) => {
+        const f = (m.items || []).find(i => i.product_name === name);
+        return s + (f ? Number(f.quantity) || 0 : 0);
+      }, 0);
+      const closeQty = (closing?.items || []).find(i => i.product_name === name)?.quantity ?? null;
+      const unit = [...(opening?.items || []), ...(closing?.items || [])].find(i => i.product_name === name)?.unit || "";
       let consumed = null;
-      if (openQty !== null && closeQty !== null) consumed = (Number(openQty) + delivQty) - Number(closeQty);
-      return { name, openQty, delivQty, closeQty, consumed, unit };
+      if (openQty !== null && closeQty !== null) consumed = (Number(openQty) + entradas - saidas) - Number(closeQty);
+      return { name, openQty, entradas, saidas, closeQty, consumed, unit };
     });
   };
 
+  // Bar totals
   const productTotals = {};
   bars.forEach(bar => {
     DAYS.forEach(day => {
@@ -55,10 +85,36 @@ export default function FestivalReport() {
     bar,
     days: DAYS.map(day => {
       const rows = computeConsumed(bar.id, day);
-      const hasData = reports.some(r => r.bar_id === bar.id && r.festival_day === day);
+      const hasData = reports.some(r => r.bar_id === bar.id && r.festival_day === day)
+        || movements.some(m => m.festival_day === day && (
+          (m.destination_type === "bar" && m.destination_id === bar.id) ||
+          (m.origin_type === "bar" && m.origin_id === bar.id)
+        ));
       return { day, rows, hasData };
     })
   }));
+
+  // Warehouse consumption: initial_stock - current_stock per product
+  const warehouseData = warehouses.map(wh => {
+    const stockMap = {};
+    (wh.initial_stock || []).forEach(item => {
+      stockMap[item.product_name] = { product_name: item.product_name, unit: item.unit, initial: Number(item.quantity) || 0, current: Number(item.quantity) || 0 };
+    });
+    movements
+      .filter(m => m.origin_type === "warehouse" && m.origin_id === wh.id)
+      .forEach(m => (m.items || []).forEach(item => {
+        if (!stockMap[item.product_name]) stockMap[item.product_name] = { product_name: item.product_name, unit: item.unit, initial: 0, current: 0 };
+        stockMap[item.product_name].current -= Number(item.quantity) || 0;
+      }));
+    movements
+      .filter(m => m.type === "restock" && m.destination_id === wh.id)
+      .forEach(m => (m.items || []).forEach(item => {
+        if (!stockMap[item.product_name]) stockMap[item.product_name] = { product_name: item.product_name, unit: item.unit, initial: 0, current: 0 };
+        stockMap[item.product_name].current += Number(item.quantity) || 0;
+      }));
+    const rows = Object.values(stockMap).map(r => ({ ...r, consumed: r.initial - r.current }));
+    return { warehouse: wh, rows };
+  });
 
   return (
     <div className="min-h-screen bg-[#F7F7F5]">
@@ -81,6 +137,7 @@ export default function FestivalReport() {
           <div className="text-center py-20 text-neutral-300">A carregar...</div>
         ) : (
           <>
+            {/* ── Total consumption ── */}
             <section className="mb-10">
               <h2 className="text-lg font-bold text-neutral-800 mb-4">Consumo Total (Todos os Bares · Todos os Dias)</h2>
               <div className="bg-white rounded-2xl border border-neutral-100 shadow-sm overflow-hidden">
@@ -107,6 +164,47 @@ export default function FestivalReport() {
               </div>
             </section>
 
+            {/* ── Warehouse section ── */}
+            {warehouseData.length > 0 && warehouseData.some(w => w.rows.length > 0) && (
+              <section className="mb-10">
+                <h2 className="text-lg font-bold text-neutral-800 mb-4">Consumo do Armazém</h2>
+                <div className="space-y-4">
+                  {warehouseData.map(({ warehouse, rows }) => (
+                    rows.length > 0 ? (
+                      <div key={warehouse.id} className="bg-white rounded-2xl border border-neutral-100 shadow-sm overflow-hidden">
+                        <div className="px-6 py-3 bg-emerald-50 border-b border-emerald-100">
+                          <div className="font-semibold text-emerald-900">{warehouse.name}</div>
+                        </div>
+                        <table className="w-full text-sm">
+                          <thead className="bg-neutral-50">
+                            <tr>
+                              <th className="text-left px-6 py-2 text-xs font-semibold text-neutral-400">Produto</th>
+                              <th className="text-center px-4 py-2 text-xs font-semibold text-neutral-400">Stock Inicial</th>
+                              <th className="text-center px-4 py-2 text-xs font-semibold text-emerald-600">Stock Final</th>
+                              <th className="text-center px-4 py-2 text-xs font-semibold text-neutral-400">Consumido</th>
+                              <th className="text-left px-4 py-2 text-xs font-semibold text-neutral-400">Unid.</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-neutral-50">
+                            {rows.map(row => (
+                              <tr key={row.product_name} className="hover:bg-neutral-50">
+                                <td className="px-6 py-2.5 font-medium text-neutral-800">{row.product_name}</td>
+                                <td className="px-4 py-2.5 text-center text-neutral-500">{row.initial}</td>
+                                <td className="px-4 py-2.5 text-center font-semibold text-emerald-700">{row.current}</td>
+                                <td className="px-4 py-2.5 text-center font-semibold text-neutral-900">{row.consumed}</td>
+                                <td className="px-4 py-2.5 text-neutral-400 text-xs">{row.unit}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    ) : null
+                  ))}
+                </div>
+              </section>
+            )}
+
+            {/* ── Detail per bar ── */}
             <section>
               <h2 className="text-lg font-bold text-neutral-800 mb-4">Detalhe por Bar</h2>
               <div className="space-y-8">
@@ -127,7 +225,8 @@ export default function FestivalReport() {
                               <tr className="border-t border-neutral-50">
                                 <th className="text-left px-6 py-2 text-xs font-semibold text-neutral-400">Produto</th>
                                 <th className="text-center px-4 py-2 text-xs font-semibold text-blue-400">{reportTypeLabels.opening}</th>
-                                <th className="text-center px-4 py-2 text-xs font-semibold text-amber-400">{reportTypeLabels.delivery}</th>
+                                <th className="text-center px-4 py-2 text-xs font-semibold text-amber-400">Entradas</th>
+                                <th className="text-center px-4 py-2 text-xs font-semibold text-purple-400">Saídas</th>
                                 <th className="text-center px-4 py-2 text-xs font-semibold text-emerald-400">{reportTypeLabels.closing}</th>
                                 <th className="text-center px-4 py-2 text-xs font-semibold text-neutral-400">Consumido</th>
                                 <th className="text-left px-4 py-2 text-xs font-semibold text-neutral-400">Unid.</th>
@@ -138,7 +237,8 @@ export default function FestivalReport() {
                                 <tr key={row.name} className="hover:bg-neutral-50">
                                   <td className="px-6 py-2.5 font-medium text-neutral-800">{row.name}</td>
                                   <td className="px-4 py-2.5 text-center text-neutral-600">{row.openQty ?? "-"}</td>
-                                  <td className="px-4 py-2.5 text-center text-neutral-600">{row.delivQty > 0 ? row.delivQty : "-"}</td>
+                                  <td className="px-4 py-2.5 text-center text-neutral-600">{row.entradas > 0 ? row.entradas : "-"}</td>
+                                  <td className="px-4 py-2.5 text-center text-purple-600">{row.saidas > 0 ? row.saidas : "-"}</td>
                                   <td className="px-4 py-2.5 text-center text-neutral-600">{row.closeQty ?? "-"}</td>
                                   <td className="px-4 py-2.5 text-center font-semibold text-neutral-900">{row.consumed ?? "-"}</td>
                                   <td className="px-4 py-2.5 text-neutral-400 text-xs">{row.unit}</td>
