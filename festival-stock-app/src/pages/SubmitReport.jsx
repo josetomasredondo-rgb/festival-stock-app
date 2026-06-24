@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
-import { ChevronLeft, Loader2, Plus, Trash2, CheckCircle } from "lucide-react";
+import { ChevronLeft, Loader2, Plus, Trash2, CheckCircle, AlertTriangle } from "lucide-react";
 import db, { getFestivalBars, getFestivalProducts } from "../lib/db";
 import { useAuth, useFestivalSettings } from "../lib/AuthContext";
 
@@ -24,6 +24,7 @@ export default function SubmitReport() {
   const [bars, setBars] = useState([]);
   const [products, setProducts] = useState([]);
   const [allReports, setAllReports] = useState([]);
+  const [allMovements, setAllMovements] = useState([]);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
@@ -55,7 +56,8 @@ export default function SubmitReport() {
       getFestivalBars(currentFestival),
       getFestivalProducts(currentFestival),
       db.StockReport.filterByFestival(festivalId, "-created_date"),
-    ]).then(([b, p, r]) => {
+      db.Movement.filterByFestival(festivalId),
+    ]).then(([b, p, r, m]) => {
       let activeBars = b.filter(bar => bar.is_active !== false);
       // bar_leader: only their assigned bar
       if (isBarLeader && user?.bar_id) {
@@ -64,6 +66,7 @@ export default function SubmitReport() {
       setBars(activeBars);
       setProducts(p);
       setAllReports(r);
+      setAllMovements(m);
       // Auto-select bar for bar_leader
       if (isBarLeader && user?.bar_id) {
         const myBar = activeBars.find(bar => bar.id === user.bar_id);
@@ -97,6 +100,24 @@ export default function SubmitReport() {
       });
     });
     return { items: Object.values(productMap), prevDay, hasNightDelivery: nightDeliveries.length > 0 };
+  };
+
+  // Returns expected available stock for a product when filling a closing report.
+  // null means no opening report exists yet (can't compute).
+  const computeAvailable = (barId, festivalDay, productName) => {
+    const dayReports = allReports.filter(r => r.bar_id === barId && r.festival_day === festivalDay);
+    const opening = dayReports.find(r => r.report_type === "opening");
+    if (!opening) return null;
+    const openQty = (opening.items || []).find(i => i.product_name === productName)?.quantity;
+    if (openQty == null) return null;
+    const deliveries = dayReports.filter(r => ["delivery", "night_delivery"].includes(r.report_type));
+    const dayMovements = allMovements.filter(m => m.festival_day === festivalDay);
+    const incomingMov = dayMovements.filter(m => m.destination_type === "bar" && m.destination_id === barId);
+    const outgoingMov = dayMovements.filter(m => m.origin_type === "bar" && m.origin_id === barId);
+    const delivQty = deliveries.reduce((s, d) => s + (Number((d.items || []).find(i => i.product_name === productName)?.quantity) || 0), 0);
+    const inQty = incomingMov.reduce((s, m) => s + (Number((m.items || []).find(i => i.product_name === productName)?.quantity) || 0), 0);
+    const outQty = outgoingMov.reduce((s, m) => s + (Number((m.items || []).find(i => i.product_name === productName)?.quantity) || 0), 0);
+    return Number(openQty) + delivQty + inQty - outQty;
   };
 
   const handleDayOrBarChange = (field, value) => {
@@ -288,19 +309,45 @@ export default function SubmitReport() {
                   </button>
                 </div>
                 <div className="space-y-2">
-                  {form.items.map((item, idx) => (
-                    <div key={idx} className="bg-white rounded-xl border border-neutral-100 p-4 grid grid-cols-12 gap-3 items-center">
+                  {form.items.map((item, idx) => {
+                    const isClosing = form.report_type === "closing";
+                    const available = isClosing && form.bar_id && item.product_name
+                      ? computeAvailable(form.bar_id, form.festival_day, item.product_name)
+                      : null;
+                    const closeQty = parseFloat(item.quantity);
+                    const consumed = available !== null && !isNaN(closeQty) ? available - closeQty : null;
+                    // impossible: closing stock > available (consumed would be negative)
+                    const exceedsAvailable = consumed !== null && consumed < 0;
+                    // low stock: remaining closing stock < what was consumed today
+                    const isLowStock = consumed !== null && consumed >= 0 && closeQty < consumed;
+                    return (
+                    <div key={idx} className={`bg-white rounded-xl border p-4 grid grid-cols-12 gap-3 items-center ${exceedsAvailable ? "border-red-300 bg-red-50" : isLowStock ? "border-amber-300 bg-amber-50" : "border-neutral-100"}`}>
                       <div className="col-span-4">
                         <input type="text" placeholder="Nome do produto" value={item.product_name}
                           onChange={e => updateItem(idx, "product_name", e.target.value)}
                           list={`products-${idx}`}
                           className="w-full text-sm border-0 border-b border-neutral-200 focus:outline-none focus:border-neutral-900 py-1 bg-transparent" />
                         <datalist id={`products-${idx}`}>{products.map(p => <option key={p.id} value={p.name} />)}</datalist>
+                        {exceedsAvailable && (
+                          <div className="flex items-center gap-1 mt-1 text-red-600 text-xs">
+                            <AlertTriangle className="w-3 h-3 flex-shrink-0" />
+                            Fecho ({closeQty}) &gt; disponível ({available}) — impossível
+                          </div>
+                        )}
+                        {isLowStock && (
+                          <div className="flex items-center gap-1 mt-1 text-amber-700 text-xs">
+                            <AlertTriangle className="w-3 h-3 flex-shrink-0" />
+                            Stock baixo — consumido {consumed}, resta {closeQty}
+                          </div>
+                        )}
+                        {isClosing && available !== null && !exceedsAvailable && !isLowStock && item.product_name && (
+                          <div className="text-xs text-neutral-400 mt-1">Disponível: {available} · Consumido: {consumed}</div>
+                        )}
                       </div>
                       <div className="col-span-3">
                         <input type="number" min="0" placeholder="Qtd" value={item.quantity}
                           onChange={e => updateItem(idx, "quantity", e.target.value)}
-                          className="w-full text-sm border-0 border-b border-neutral-200 focus:outline-none focus:border-neutral-900 py-1 bg-transparent" />
+                          className={`w-full text-sm border-0 border-b focus:outline-none py-1 bg-transparent ${exceedsAvailable ? "border-red-400 focus:border-red-600 text-red-700 font-semibold" : isLowStock ? "border-amber-400 focus:border-amber-600 text-amber-800 font-semibold" : "border-neutral-200 focus:border-neutral-900"}`} />
                       </div>
                       <div className="col-span-2">
                         <input type="text" placeholder="Unid." value={item.unit}
@@ -318,7 +365,8 @@ export default function SubmitReport() {
                         </button>
                       </div>
                     </div>
-                  ))}
+                    );
+                  })}
                   {form.items.length === 0 && (
                     <div className="text-center py-8 text-neutral-300 text-sm border-2 border-dashed border-neutral-200 rounded-xl">
                       Ainda sem produtos — clica em "Adicionar produto" acima

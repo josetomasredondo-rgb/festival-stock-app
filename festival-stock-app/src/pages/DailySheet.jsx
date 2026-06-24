@@ -139,7 +139,15 @@ export default function DailySheet() {
     });
 
     const hasData = barReports.length > 0 || incomingMovements.length > 0 || outgoingMovements.length > 0;
-    const needsDelivery = rows.some(r => r.closeQty !== "-" && r.consumed !== "-" && Number(r.closeQty) < Number(r.consumed));
+    // Warn when bar has less closing stock than daily consumption (needs restock)
+    // OR when consumption is negative (impossible — closing > opening + deliveries, data error)
+    const needsDelivery = rows.some(r => {
+      if (r.consumed === "-") return false;
+      const c = Number(r.consumed);
+      if (c < 0) return true; // impossible: closing > available
+      if (r.closeQty === "-") return false;
+      return Number(r.closeQty) < c; // closing stock < today's consumption
+    });
     return { bar, opening, deliveries, closing, incomingMovements, outgoingMovements, rows, hasData, needsDelivery };
   });
 
@@ -289,9 +297,27 @@ export default function DailySheet() {
                               )}
                               <td className="px-4 py-3 text-center text-neutral-600">{row.closeQty}</td>
                               <td className="px-4 py-3 text-center">
-                                {row.consumed !== "-" ? (
-                                  <span className={`font-semibold ${Number(row.consumed) < 0 ? "text-red-500" : "text-neutral-800"}`}>{row.consumed}</span>
-                                ) : <span className="text-neutral-300">-</span>}
+                                {row.consumed !== "-" ? (() => {
+                                  const c = Number(row.consumed);
+                                  const cq = row.closeQty !== "-" ? Number(row.closeQty) : null;
+                                  const isImpossible = c < 0;
+                                  const isLow = !isImpossible && cq !== null && cq < c;
+                                  return (
+                                    <div>
+                                      <span className={`font-semibold ${isImpossible ? "text-red-500" : "text-neutral-800"}`}>{row.consumed}</span>
+                                      {isImpossible && (
+                                        <div className="flex items-center justify-center gap-1 text-xs text-red-500 mt-0.5">
+                                          <AlertTriangle className="w-3 h-3" /> fecho &gt; disponível
+                                        </div>
+                                      )}
+                                      {isLow && (
+                                        <div className="flex items-center justify-center gap-1 text-xs text-orange-500 mt-0.5">
+                                          <AlertTriangle className="w-3 h-3" /> stock baixo
+                                        </div>
+                                      )}
+                                    </div>
+                                  );
+                                })() : <span className="text-neutral-300">-</span>}
                               </td>
                               <td className="px-4 py-3 text-neutral-400 text-xs">{row.unit}</td>
                             </tr>
