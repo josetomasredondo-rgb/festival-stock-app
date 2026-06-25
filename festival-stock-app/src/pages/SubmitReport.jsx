@@ -333,7 +333,7 @@ export default function SubmitReport() {
                         )}
                       </div>
                       <div className="col-span-3">
-                        <input type="number" min="0" placeholder="Qtd" value={item.quantity}
+                        <input type="number" step="any" placeholder="Qtd" value={item.quantity}
                           onChange={e => updateItem(idx, "quantity", e.target.value)}
                           className={`w-full text-sm border-0 border-b focus:outline-none py-1 bg-transparent ${exceedsAvailable ? "border-red-400 focus:border-red-600 text-red-700 font-semibold" : isLowStock ? "border-amber-400 focus:border-amber-600 text-amber-800 font-semibold" : "border-neutral-200 focus:border-neutral-900"}`} />
                         {exceedsAvailable && (
