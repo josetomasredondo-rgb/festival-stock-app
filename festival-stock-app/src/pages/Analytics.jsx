@@ -270,45 +270,51 @@ function ResumoTab({ stats, bars, dayNames, chartJSReady }) {
         />
       </div>
 
-      {/* Line chart */}
-      <div className="bg-white rounded-2xl border border-neutral-100 p-5 shadow-sm">
-        <h3 className="text-sm font-semibold text-neutral-700">Consumo por dia</h3>
-        <p className="text-xs text-neutral-400 mt-0.5 mb-4">Seleciona produtos na tabela abaixo para mostrar no gráfico</p>
+      {/* Charts side by side */}
+      <div className="grid grid-cols-2 gap-6">
+        <div className="bg-white rounded-2xl border border-neutral-100 p-5 shadow-sm">
+          <h3 className="text-sm font-semibold text-neutral-700">Consumo por dia</h3>
+          <p className="text-xs text-neutral-400 mt-0.5 mb-4">Seleciona produtos na tabela abaixo</p>
 
-        <canvas ref={lineCanvasRef} className={selectedList.length === 0 ? "opacity-0 h-0 pointer-events-none" : ""} />
+          <canvas ref={lineCanvasRef} className={selectedList.length === 0 ? "opacity-0 h-0 pointer-events-none" : ""} />
 
-        {selectedList.length === 0 && (
-          <div className="flex items-center justify-center h-28 text-neutral-300 text-sm">
-            Nenhum produto selecionado
-          </div>
-        )}
+          {selectedList.length === 0 && (
+            <div className="flex items-center justify-center h-28 text-neutral-300 text-sm">
+              Nenhum produto selecionado
+            </div>
+          )}
 
-        {/* Custom HTML legend */}
-        {selectedList.length > 0 && (
-          <div className="flex flex-wrap gap-x-5 gap-y-2 mt-4 pt-3 border-t border-neutral-50">
-            {selectedList.map(row => (
-              <button
-                key={row.name}
-                type="button"
-                onClick={() => toggleProduct(row.name)}
-                className="flex items-center gap-1.5 text-xs text-neutral-600 hover:text-neutral-900 transition-colors"
-              >
-                <svg width="28" height="14" viewBox="0 0 28 14" className="shrink-0">
-                  <line
-                    x1="0" y1="7" x2="28" y2="7"
-                    stroke={row.style.color}
-                    strokeWidth="2"
-                    strokeDasharray={row.style.dash.length ? row.style.dash.join(",") : undefined}
-                  />
-                  <text x="14" y="11" textAnchor="middle" fontSize="9" fill={row.style.color} fontFamily="sans-serif">
-                    {row.style.symbol}
-                  </text>
-                </svg>
-                {row.name}
-              </button>
-            ))}
-          </div>
-        )}
+          {selectedList.length > 0 && (
+            <div className="flex flex-wrap gap-x-4 gap-y-2 mt-4 pt-3 border-t border-neutral-50">
+              {selectedList.map(row => (
+                <button
+                  key={row.name}
+                  type="button"
+                  onClick={() => toggleProduct(row.name)}
+                  className="flex items-center gap-1.5 text-xs text-neutral-600 hover:text-neutral-900 transition-colors"
+                >
+                  <svg width="28" height="14" viewBox="0 0 28 14" className="shrink-0">
+                    <line
+                      x1="0" y1="7" x2="28" y2="7"
+                      stroke={row.style.color}
+                      strokeWidth="2"
+                      strokeDasharray={row.style.dash.length ? row.style.dash.join(",") : undefined}
+                    />
+                    <text x="14" y="11" textAnchor="middle" fontSize="9" fill={row.style.color} fontFamily="sans-serif">
+                      {row.style.symbol}
+                    </text>
+                  </svg>
+                  {row.name}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <div className="bg-white rounded-2xl border border-neutral-100 p-5 shadow-sm">
+          <h3 className="text-sm font-semibold text-neutral-700 mb-4">Consumo por bar (%)</h3>
+          <canvas ref={barCanvasRef} />
+        </div>
       </div>
 
       {/* Product table with checkboxes */}
@@ -336,7 +342,7 @@ function ResumoTab({ stats, bars, dayNames, chartJSReady }) {
                     <tr
                       key={row.name}
                       onClick={() => toggleProduct(row.name)}
-                      className={`cursor-pointer transition-colors hover:bg-neutral-50 ${!isSelected ? "opacity-50" : ""}`}
+                      className="cursor-pointer hover:bg-neutral-50 transition-colors"
                     >
                       {/* Checkbox */}
                       <td className="px-3 py-3">
@@ -348,17 +354,17 @@ function ResumoTab({ stats, bars, dayNames, chartJSReady }) {
                           )}
                         </div>
                       </td>
-                      {/* Color dot / symbol */}
-                      <td className="px-1 py-3 text-center text-base leading-none select-none" style={{ color: isSelected ? row.style.color : "#d1d5db" }}>
+                      {/* Color symbol */}
+                      <td className="px-1 py-3 text-center text-base leading-none select-none" style={{ color: row.style.color }}>
                         {row.style.symbol}
                       </td>
-                      <td className={`px-3 py-3 font-medium ${isSelected ? "text-neutral-800" : "text-neutral-400"}`}>{row.name}</td>
-                      <td className={`px-4 py-3 text-center ${isSelected ? "text-neutral-700 font-medium" : "text-neutral-400"}`}>{row.consumed}</td>
-                      <td className={`px-4 py-3 text-center ${isSelected ? "text-neutral-500" : "text-neutral-400"}`}>{row.unit || "—"}</td>
-                      <td className={`px-4 py-3 text-center ${isSelected ? "text-neutral-500" : "text-neutral-400"}`}>{row.waste}</td>
-                      <td className={`px-4 py-3 text-center ${isSelected ? "text-neutral-600" : "text-neutral-400"}`}>{row.pct}%</td>
+                      <td className="px-3 py-3 font-medium text-neutral-800">{row.name}</td>
+                      <td className="px-4 py-3 text-center text-neutral-700 font-medium">{row.consumed}</td>
+                      <td className="px-4 py-3 text-center text-neutral-500">{row.unit || "—"}</td>
+                      <td className="px-4 py-3 text-center text-neutral-500">{row.waste}</td>
+                      <td className="px-4 py-3 text-center text-neutral-600">{row.pct}%</td>
                       <td className="px-4 py-3 text-center">
-                        <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${isSelected ? row.badgeColor : "bg-neutral-100 text-neutral-400"}`}>
+                        <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${row.badgeColor}`}>
                           {row.badge}
                         </span>
                       </td>
@@ -370,12 +376,6 @@ function ResumoTab({ stats, bars, dayNames, chartJSReady }) {
           </div>
         </div>
       )}
-
-      {/* Bar chart */}
-      <div className="bg-white rounded-2xl border border-neutral-100 p-5 shadow-sm">
-        <h3 className="text-sm font-semibold text-neutral-700 mb-4">Consumo por bar (%)</h3>
-        <canvas ref={barCanvasRef} />
-      </div>
 
       {/* Bar performance */}
       {barPerfRows.length > 0 && (
