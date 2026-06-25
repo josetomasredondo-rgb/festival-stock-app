@@ -12,6 +12,8 @@ import FestivalReport from "./pages/FestivalReport";
 import Setup from "./pages/Setup";
 import Warehouse from "./pages/Warehouse";
 import Movimentos from "./pages/Movimentos";
+import Analytics from "./pages/Analytics";
+import SmartChecklist from "./pages/SmartChecklist";
 
 const ALL_PAGES = {
   Dashboard, SubmitReport, DailySheet, Reports, FestivalReport, Setup, Warehouse, Movimentos
@@ -30,6 +32,8 @@ function AppRoutes() {
         {/* Festival-independent routes */}
         <Route path="/FestivalSelect" element={<FestivalSelect />} />
         {role === "manager" && <Route path="/GlobalSettings" element={<GlobalSettings />} />}
+        {role === "manager" && <Route path="/Analytics" element={<Analytics />} />}
+        {role === "manager" && <Route path="/SmartChecklist" element={<SmartChecklist />} />
 
         {/* Redirect to festival select if no festival chosen (non-manager) */}
         {!currentFestival && role !== "manager" ? (

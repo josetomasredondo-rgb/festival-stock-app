@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { BarChart2, ClipboardList, Package, ArrowRight, Lock, FileText, Warehouse, ArrowLeftRight } from "lucide-react";
+import { BarChart2, ClipboardList, Package, ArrowRight, Lock, FileText, Warehouse, ArrowLeftRight, ListChecks } from "lucide-react";
 import db, { getFestivalBars } from "../lib/db";
 import { useAuth, ROLE_ACCESS, useFestivalSettings } from "../lib/AuthContext";
 
@@ -44,9 +44,11 @@ export default function Dashboard() {
     { key: "Setup", title: "Gerir Bares e Produtos", description: "Configurar bares, responsáveis e catálogo de produtos", icon: Package, color: "from-orange-500 to-amber-500", light: "bg-orange-50 text-orange-700" },
     { key: "FestivalReport", title: "Relatório Final", description: "Ver o resumo completo do festival em todos os bares e dias", icon: FileText, color: "from-slate-600 to-slate-800", light: "bg-slate-100 text-slate-700" },
     { key: "Reports", title: "Ver e Editar Relatórios", description: "Ver, filtrar e editar qualquer relatório de stock submetido", icon: ClipboardList, color: "from-rose-500 to-pink-600", light: "bg-rose-50 text-rose-700" },
+    { key: "Analytics", title: "Análise", description: "Consumo por dia, bar e produto", icon: BarChart2, color: "from-teal-500 to-cyan-600", light: "bg-teal-50 text-teal-700", managerOnly: true },
+    { key: "SmartChecklist", title: "Preparar evento", description: "Gerar checklist de stock com base em histórico", icon: ListChecks, color: "from-purple-500 to-violet-600", light: "bg-purple-50 text-purple-700", managerOnly: true },
   ];
 
-  const cards = allCards.filter(c => allowed.includes(c.key));
+  const cards = allCards.filter(c => c.managerOnly ? role === "manager" : allowed.includes(c.key));
 
   const typeColors = { opening: "bg-blue-100 text-blue-700", delivery: "bg-amber-100 text-amber-700", night_delivery: "bg-indigo-100 text-indigo-700", closing: "bg-emerald-100 text-emerald-700" };
   const movTypeColors = { warehouse_to_bar: "bg-emerald-100 text-emerald-700", bar_to_bar: "bg-purple-100 text-purple-700", restock: "bg-blue-100 text-blue-700" };

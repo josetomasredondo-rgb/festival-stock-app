@@ -52,8 +52,8 @@ function MultiSelect({ label, options, selectedIds, onAdd, onRemove, color, getL
 }
 
 // ── Festival form (create + edit) ─────────────────────────────────────────────
-function FestivalForm({ bars, products, users, existingWarehouses, onSave, onCancel, initial, saving }) {
-  const blank = { name: "", start_date: "", end_date: "", num_days: 1, day_names: ["Dia 1"], bar_ids: [], product_ids: [], user_ids: [] };
+function FestivalForm({ bars, products, users, existingWarehouses, onSave, onCancel, initial, saving, suggestedName }) {
+  const blank = { name: suggestedName || "", start_date: "", end_date: "", num_days: 1, day_names: ["Dia 1"], bar_ids: [], product_ids: [], user_ids: [], expected_attendance: 0 };
   const [form, setForm] = useState(() => {
     if (!initial) return blank;
     return {
@@ -62,6 +62,7 @@ function FestivalForm({ bars, products, users, existingWarehouses, onSave, onCan
       bar_ids: initial.bar_ids || [],
       product_ids: initial.product_ids || [],
       user_ids: initial.user_ids || [],
+      expected_attendance: initial.expected_attendance || 0,
       day_names: initial.day_names?.length
         ? initial.day_names
         : Array.from({ length: initial.num_days || 1 }, (_, i) => `Dia ${i + 1}`),
@@ -128,11 +129,19 @@ function FestivalForm({ bars, products, users, existingWarehouses, onSave, onCan
         </div>
       </div>
 
-      <div>
-        <label className="block text-xs text-neutral-400 mb-1">Nº de dias</label>
-        <input type="number" min={1} max={15} value={form.num_days}
-          onChange={e => handleNumDays(e.target.value)}
-          className="w-24 border border-neutral-200 rounded-xl px-3 py-2.5 text-sm text-center focus:outline-none focus:ring-2 focus:ring-neutral-900" />
+      <div className="grid grid-cols-2 gap-3">
+        <div>
+          <label className="block text-xs text-neutral-400 mb-1">Nº de dias</label>
+          <input type="number" min={1} max={15} value={form.num_days}
+            onChange={e => handleNumDays(e.target.value)}
+            className="w-full border border-neutral-200 rounded-xl px-3 py-2.5 text-sm text-center focus:outline-none focus:ring-2 focus:ring-neutral-900" />
+        </div>
+        <div>
+          <label className="block text-xs text-neutral-400 mb-1">Previsão de pessoas</label>
+          <input type="number" min={0} value={form.expected_attendance}
+            onChange={e => setForm(f => ({ ...f, expected_attendance: Number(e.target.value) || 0 }))}
+            className="w-full border border-neutral-200 rounded-xl px-3 py-2.5 text-sm text-center focus:outline-none focus:ring-2 focus:ring-neutral-900" />
+        </div>
       </div>
 
       <div className="space-y-2">
@@ -484,6 +493,7 @@ export default function GlobalSettings() {
   const [loading, setLoading] = useState(true);
   const [creatingFestival, setCreatingFestival] = useState(false);
   const [savingFestival, setSavingFestival] = useState(false);
+  const [smartSuggestions, setSmartSuggestions] = useState(null);
 
   const [newBar, setNewBar] = useState({ name: "", leader_name: "", leader_email: "", location: "" });
   const [newProduct, setNewProduct] = useState({ name: "", unit: "units", category: "other", selling_price: "" });
@@ -493,6 +503,16 @@ export default function GlobalSettings() {
   useEffect(() => {
     Promise.all([db.Bar.list(), db.Product.list(), db.AppUser.list(), db.Festival.list(), db.Warehouse.list()])
       .then(([b, p, u, f, w]) => { setBars(b); setProducts(p); setUsers(u); setFestivals(f); setWarehouses(w); setLoading(false); });
+    try {
+      const stored = sessionStorage.getItem("smartChecklistData");
+      if (stored) {
+        const data = JSON.parse(stored);
+        setSmartSuggestions(data);
+        setCreatingFestival(true);
+        setTab("festivais");
+        sessionStorage.removeItem("smartChecklistData");
+      }
+    } catch {}
   }, []);
 
   if (role !== "manager") {
@@ -556,8 +576,8 @@ export default function GlobalSettings() {
 
   const handleCreateFestival = async (form, formWarehouses) => {
     setSavingFestival(true);
-    const { num_days, day_names, bar_ids, product_ids, user_ids, ...rest } = form;
-    const created = await db.Festival.create({ ...rest, num_days, day_names, bar_ids: bar_ids || [], product_ids: product_ids || [], user_ids: user_ids || [], is_active: true, is_closed: false });
+    const { num_days, day_names, bar_ids, product_ids, user_ids, expected_attendance, ...rest } = form;
+    const created = await db.Festival.create({ ...rest, num_days, day_names, bar_ids: bar_ids || [], product_ids: product_ids || [], user_ids: user_ids || [], expected_attendance: expected_attendance || 0, is_active: true, is_closed: false });
     if (created?.id) {
       for (const wh of (formWarehouses || [])) {
         await db.Warehouse.create({ festival_id: created.id, name: wh.name || "Armazém Central", initial_stock: wh.initial_stock || [] });
@@ -570,8 +590,8 @@ export default function GlobalSettings() {
   };
 
   const handleUpdateFestival = async (id, form, formWarehouses) => {
-    const { num_days, day_names, bar_ids, product_ids, user_ids, ...rest } = form;
-    await db.Festival.update(id, { ...rest, num_days, day_names, bar_ids: bar_ids || [], product_ids: product_ids || [], user_ids: user_ids || [] });
+    const { num_days, day_names, bar_ids, product_ids, user_ids, expected_attendance, ...rest } = form;
+    await db.Festival.update(id, { ...rest, num_days, day_names, bar_ids: bar_ids || [], product_ids: product_ids || [], user_ids: user_ids || [], expected_attendance: expected_attendance || 0 });
     await syncFestivalWarehouses(id, formWarehouses);
     await refreshFestivals(id);
   };
@@ -699,11 +719,25 @@ export default function GlobalSettings() {
                 ) : (
                   <div className="bg-white rounded-2xl border border-neutral-100 shadow-sm p-5">
                     <div className="text-xs font-semibold uppercase tracking-widest text-neutral-400 mb-4">Novo Festival</div>
+                    {smartSuggestions?.suggestions?.length > 0 && (
+                      <div className="mb-4 p-4 bg-blue-50 border border-blue-200 rounded-xl text-sm">
+                        <div className="font-semibold text-blue-900 mb-2">Sugestões da checklist inteligente</div>
+                        <div className="space-y-0.5">
+                          {smartSuggestions.suggestions.map(s => (
+                            <div key={s.product_name} className="text-blue-800">
+                              {s.product_name}: <span className="font-semibold">{s.suggested}</span> {s.unit}
+                            </div>
+                          ))}
+                        </div>
+                        <div className="text-xs text-blue-600 mt-2">Usa estas quantidades como stock inicial nos armazéns.</div>
+                      </div>
+                    )}
                     <FestivalForm bars={bars} products={products} users={users}
                       existingWarehouses={[]}
                       saving={savingFestival}
+                      suggestedName={smartSuggestions?.name}
                       onSave={handleCreateFestival}
-                      onCancel={() => setCreatingFestival(false)} />
+                      onCancel={() => { setCreatingFestival(false); setSmartSuggestions(null); }} />
                   </div>
                 )}
                 {festivals.map(f => (
