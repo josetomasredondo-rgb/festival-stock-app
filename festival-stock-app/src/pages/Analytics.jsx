@@ -1,4 +1,4 @@
-import { useState, useEffect, useLayoutEffect, useRef } from "react";
+import { useState, useEffect, useLayoutEffect, useRef, useMemo } from "react";
 import { Link } from "react-router-dom";
 import { ChevronLeft, Download, TrendingUp } from "lucide-react";
 import db, { getFestivalBars } from "../lib/db";
@@ -6,6 +6,14 @@ import { useAuth } from "../lib/AuthContext";
 
 const CHARTJS_CDN = "https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js";
 const COMPARE_COLORS = ["#1D9E75", "#7F77DD", "#EF9F27"];
+
+const PRODUCT_STYLES = [
+  { color: "#1D9E75", dash: [],     pointStyle: "circle",   symbol: "●" },
+  { color: "#7F77DD", dash: [6, 3], pointStyle: "rectRot",  symbol: "◆" },
+  { color: "#EF9F27", dash: [2, 3], pointStyle: "triangle", symbol: "▲" },
+  { color: "#D85A30", dash: [8, 4], pointStyle: "rect",     symbol: "■" },
+  { color: "#D4537E", dash: [4, 4], pointStyle: "star",     symbol: "★" },
+];
 
 function useChartJS() {
   const [ready, setReady] = useState(typeof window !== "undefined" && !!window.Chart);
@@ -27,7 +35,6 @@ function useChartJS() {
 
 // Returns per-product-per-bar-per-day breakdown plus aggregates
 function computeDetailed(reports, movements, bars, dayNames) {
-  // productData[name] = { unit, consumed, waste, byBar: {barId: consumed}, byDay: {day: consumed} }
   const productData = {};
   const barTotals = {};
   const dayTotals = {};
@@ -74,7 +81,6 @@ function computeDetailed(reports, movements, bars, dayNames) {
       });
     });
 
-    // Waste: final closing per bar
     const lastDay = [...dayNames].reverse().find(day =>
       reports.some(r => r.bar_id === bar.id && r.festival_day === day && r.report_type === "closing")
     );
@@ -91,38 +97,6 @@ function computeDetailed(reports, movements, bars, dayNames) {
   const topBar = Object.values(barTotals).sort((a, b) => b.consumed - a.consumed)[0];
 
   return { productData, barTotals, dayTotals, totalConsumed, topProduct, topBar };
-}
-
-// Compute stats filtered to a single product (or all if productFilter is null)
-function computeFilteredStats(fullStats, bars, dayNames, productFilter) {
-  if (!productFilter) return {
-    totalConsumed: fullStats.totalConsumed,
-    topProduct: fullStats.topProduct,
-    topBar: fullStats.topBar,
-    dayTotals: fullStats.dayTotals,
-    barTotals: fullStats.barTotals,
-    unit: null,
-  };
-
-  const pd = fullStats.productData[productFilter];
-  if (!pd) return { totalConsumed: 0, topProduct: null, topBar: null, dayTotals: {}, barTotals: {}, unit: "" };
-
-  const dayTotals = {};
-  dayNames.forEach(d => { dayTotals[d] = pd.byDay[d] || 0; });
-
-  const barTotals = {};
-  bars.forEach(b => { barTotals[b.id] = { name: b.name, consumed: pd.byBar[b.id] || 0 }; });
-
-  const topBar = Object.values(barTotals).sort((a, b) => b.consumed - a.consumed)[0];
-
-  return {
-    totalConsumed: pd.consumed,
-    topProduct: null,
-    topBar,
-    dayTotals,
-    barTotals,
-    unit: pd.unit,
-  };
 }
 
 function wasteBadge(pct) {
@@ -149,172 +123,262 @@ function StatCard({ label, value, sub }) {
 }
 
 // ─── Resumo tab ───────────────────────────────────────────────────────────────
-function ResumoTab({ stats, bars, dayNames, chartJSReady, productFilter, setProductFilter, setTab }) {
-  const dayCanvasRef = useRef(null);
+function ResumoTab({ stats, bars, dayNames, chartJSReady }) {
+  const lineCanvasRef = useRef(null);
+  const lineChartInst = useRef(null);
   const barCanvasRef = useRef(null);
-  const dayChartInst = useRef(null);
   const barChartInst = useRef(null);
 
-  const filtered = computeFilteredStats(stats, bars, dayNames, productFilter);
-  const productNames = Object.keys(stats.productData).sort();
+  // Sorted product rows with assigned styles — stable as long as stats doesn't change
+  const wasteRows = useMemo(() =>
+    Object.entries(stats.productData)
+      .sort((a, b) => b[1].consumed - a[1].consumed)
+      .map(([name, { consumed, unit, waste = 0, byDay }], i) => {
+        const total = consumed + waste;
+        const pct = total > 0 ? Math.round((waste / total) * 100) : 0;
+        const { label, color } = wasteBadge(pct);
+        return {
+          name, consumed, waste, pct,
+          badge: label, badgeColor: color,
+          unit, byDay,
+          style: PRODUCT_STYLES[i % PRODUCT_STYLES.length],
+        };
+      }),
+    [stats]
+  );
 
-  const wasteRows = Object.entries(stats.productData)
-    .filter(([name]) => !productFilter || name === productFilter)
-    .sort((a, b) => b[1].consumed - a[1].consumed)
-    .map(([name, { consumed, unit, waste = 0 }]) => {
-      const total = consumed + waste;
-      const pct = total > 0 ? Math.round((waste / total) * 100) : 0;
-      const { label, color } = wasteBadge(pct);
-      return { name, consumed, waste, pct, badge: label, color, unit };
+  // Initially select first 3 products (key on parent resets this when festival changes)
+  const [selectedProducts, setSelectedProducts] = useState(() =>
+    new Set(wasteRows.slice(0, 3).map(r => r.name))
+  );
+
+  const toggleProduct = name => {
+    setSelectedProducts(prev => {
+      const next = new Set(prev);
+      if (next.has(name)) next.delete(name); else next.add(name);
+      return next;
     });
+  };
 
+  const selectedList = wasteRows.filter(r => selectedProducts.has(r.name));
+
+  // Metric values
+  const daysWithData = dayNames.filter(day =>
+    (stats._reports || []).some(r => r.festival_day === day)
+  ).length;
+  const expectedReports = dayNames.length * bars.length * 2;
+  const actualReports = (stats._reports || []).filter(r =>
+    ["opening", "closing"].includes(r.report_type)
+  ).length;
+
+  // Bar performance rows
   const barPerfRows = bars.map(bar => {
     const expected = dayNames.length * 2;
-    const actual = stats._reports
-      ? stats._reports.filter(r => r.bar_id === bar.id && ["opening", "closing"].includes(r.report_type)).length
-      : 0;
+    const actual = (stats._reports || []).filter(r =>
+      r.bar_id === bar.id && ["opening", "closing"].includes(r.report_type)
+    ).length;
     const pct = expected > 0 ? Math.round((actual / expected) * 100) : 0;
     const badge = pct >= 90 ? "Excelente" : pct >= 70 ? "Médio" : "Melhorar";
     const color = pct >= 90 ? "bg-emerald-100 text-emerald-700" : pct >= 70 ? "bg-amber-100 text-amber-700" : "bg-red-100 text-red-700";
     return { bar, actual, expected, pct, badge, color };
   });
 
+  // Line chart — rebuild whenever selection or data changes
   useLayoutEffect(() => {
     if (!chartJSReady) return;
     const Chart = window.Chart;
+    if (lineChartInst.current) { lineChartInst.current.destroy(); lineChartInst.current = null; }
+    if (!lineCanvasRef.current) return;
 
-    if (dayChartInst.current) { dayChartInst.current.destroy(); dayChartInst.current = null; }
-    if (barChartInst.current) { barChartInst.current.destroy(); barChartInst.current = null; }
-
-    if (dayCanvasRef.current) {
-      dayChartInst.current = new Chart(dayCanvasRef.current, {
-        type: "bar",
-        data: {
-          labels: dayNames,
-          datasets: [{ label: "Consumo", data: dayNames.map(d => filtered.dayTotals[d] || 0), backgroundColor: "#1D9E75", borderRadius: 6 }],
-        },
-        options: { responsive: true, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true, ticks: { precision: 0 } } } },
-      });
-    }
-
-    if (barCanvasRef.current) {
-      const total = filtered.totalConsumed || 1;
-      const entries = Object.values(filtered.barTotals).sort((a, b) => b.consumed - a.consumed);
-      barChartInst.current = new Chart(barCanvasRef.current, {
-        type: "bar",
-        data: {
-          labels: entries.map(e => e.name),
-          datasets: [{ label: "%", data: entries.map(e => Math.round((e.consumed / total) * 100)), backgroundColor: "#7F77DD", borderRadius: 6 }],
-        },
-        options: {
-          indexAxis: "y",
-          responsive: true,
-          plugins: { legend: { display: false } },
-          scales: { x: { beginAtZero: true, max: 100, ticks: { callback: v => v + "%" } } },
-        },
-      });
-    }
+    lineChartInst.current = new Chart(lineCanvasRef.current, {
+      type: "line",
+      data: {
+        labels: dayNames,
+        datasets: selectedList.map(row => ({
+          label: row.name,
+          data: dayNames.map(d => Math.round(row.byDay[d] || 0)),
+          borderColor: row.style.color,
+          backgroundColor: "transparent",
+          borderDash: row.style.dash,
+          pointStyle: row.style.pointStyle,
+          pointRadius: 5,
+          pointHoverRadius: 7,
+          borderWidth: 2,
+          tension: 0.3,
+        })),
+      },
+      options: {
+        responsive: true,
+        plugins: { legend: { display: false } },
+        scales: { y: { beginAtZero: true, ticks: { precision: 0 } } },
+      },
+    });
 
     return () => {
-      if (dayChartInst.current) { dayChartInst.current.destroy(); dayChartInst.current = null; }
+      if (lineChartInst.current) { lineChartInst.current.destroy(); lineChartInst.current = null; }
+    };
+  }, [chartJSReady, selectedProducts, wasteRows, dayNames.join(",")]);
+
+  // Bar chart
+  useLayoutEffect(() => {
+    if (!chartJSReady) return;
+    const Chart = window.Chart;
+    if (barChartInst.current) { barChartInst.current.destroy(); barChartInst.current = null; }
+    if (!barCanvasRef.current) return;
+
+    const total = stats.totalConsumed || 1;
+    const entries = Object.values(stats.barTotals).sort((a, b) => b.consumed - a.consumed);
+    barChartInst.current = new Chart(barCanvasRef.current, {
+      type: "bar",
+      data: {
+        labels: entries.map(e => e.name),
+        datasets: [{ label: "%", data: entries.map(e => Math.round((e.consumed / total) * 100)), backgroundColor: "#7F77DD", borderRadius: 6 }],
+      },
+      options: {
+        indexAxis: "y",
+        responsive: true,
+        plugins: { legend: { display: false } },
+        scales: { x: { beginAtZero: true, max: 100, ticks: { callback: v => v + "%" } } },
+      },
+    });
+
+    return () => {
       if (barChartInst.current) { barChartInst.current.destroy(); barChartInst.current = null; }
     };
-  }, [chartJSReady, productFilter, stats, dayNames.join(",")]);
+  }, [chartJSReady, stats]);
 
   return (
     <div className="space-y-8">
-      {/* Product filter */}
-      <div className="flex items-center gap-3 flex-wrap">
-        <span className="text-sm text-neutral-500">Filtrar por produto:</span>
-        <select
-          value={productFilter || ""}
-          onChange={e => setProductFilter(e.target.value || null)}
-          className="border border-neutral-200 rounded-xl px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-neutral-900"
-        >
-          <option value="">Todos os produtos</option>
-          {productNames.map(n => <option key={n} value={n}>{n}</option>)}
-        </select>
-        {productFilter && (
-          <button onClick={() => setProductFilter(null)} className="text-xs text-neutral-400 hover:text-neutral-700 underline">
-            Limpar filtro
-          </button>
-        )}
-      </div>
-
       {/* Metric cards */}
-      <div className={`grid gap-4 ${productFilter ? "grid-cols-2" : "grid-cols-3"}`}>
-        <StatCard
-          label="Total consumido"
-          value={`${filtered.totalConsumed}${filtered.unit ? " " + filtered.unit : ""}`}
-        />
-        {productFilter ? (
-          <StatCard
-            label="Unidade"
-            value={stats.productData[productFilter]?.unit || "—"}
-          />
-        ) : (
-          <StatCard
-            label="Produto mais consumido"
-            value={filtered.topProduct?.[0] || "—"}
-            sub={filtered.topProduct ? `${filtered.topProduct[1].consumed} ${filtered.topProduct[1].unit}` : undefined}
-          />
-        )}
+      <div className="grid grid-cols-3 gap-4">
         <StatCard
           label="Bar mais ativo"
-          value={filtered.topBar?.name || "—"}
-          sub={filtered.topBar && filtered.totalConsumed > 0
-            ? `${Math.round((filtered.topBar.consumed / filtered.totalConsumed) * 100)}% do consumo total`
+          value={stats.topBar?.name || "—"}
+          sub={stats.topBar && stats.totalConsumed > 0
+            ? `${Math.round((stats.topBar.consumed / stats.totalConsumed) * 100)}% do consumo total`
             : undefined}
+        />
+        <StatCard
+          label="Dias com dados"
+          value={`${daysWithData} / ${dayNames.length}`}
+          sub={daysWithData === dayNames.length ? "todos os dias com relatórios" : `${dayNames.length - daysWithData} dia(s) sem relatórios`}
+        />
+        <StatCard
+          label="Relatórios submetidos"
+          value={`${actualReports} / ${expectedReports}`}
+          sub={expectedReports > 0 ? `${Math.round((actualReports / expectedReports) * 100)}% completo` : undefined}
         />
       </div>
 
-      {/* Charts */}
-      <div className="grid grid-cols-2 gap-6">
-        <div className="bg-white rounded-2xl border border-neutral-100 p-5 shadow-sm">
-          <h3 className="text-sm font-semibold text-neutral-700 mb-4">Consumo por dia</h3>
-          <canvas ref={dayCanvasRef} />
-        </div>
-        <div className="bg-white rounded-2xl border border-neutral-100 p-5 shadow-sm">
-          <h3 className="text-sm font-semibold text-neutral-700 mb-4">Consumo por bar (%)</h3>
-          <canvas ref={barCanvasRef} />
-        </div>
+      {/* Line chart */}
+      <div className="bg-white rounded-2xl border border-neutral-100 p-5 shadow-sm">
+        <h3 className="text-sm font-semibold text-neutral-700">Consumo por dia</h3>
+        <p className="text-xs text-neutral-400 mt-0.5 mb-4">Seleciona produtos na tabela abaixo para mostrar no gráfico</p>
+
+        <canvas ref={lineCanvasRef} className={selectedList.length === 0 ? "opacity-0 h-0 pointer-events-none" : ""} />
+
+        {selectedList.length === 0 && (
+          <div className="flex items-center justify-center h-28 text-neutral-300 text-sm">
+            Nenhum produto selecionado
+          </div>
+        )}
+
+        {/* Custom HTML legend */}
+        {selectedList.length > 0 && (
+          <div className="flex flex-wrap gap-x-5 gap-y-2 mt-4 pt-3 border-t border-neutral-50">
+            {selectedList.map(row => (
+              <button
+                key={row.name}
+                type="button"
+                onClick={() => toggleProduct(row.name)}
+                className="flex items-center gap-1.5 text-xs text-neutral-600 hover:text-neutral-900 transition-colors"
+              >
+                <svg width="28" height="14" viewBox="0 0 28 14" className="shrink-0">
+                  <line
+                    x1="0" y1="7" x2="28" y2="7"
+                    stroke={row.style.color}
+                    strokeWidth="2"
+                    strokeDasharray={row.style.dash.length ? row.style.dash.join(",") : undefined}
+                  />
+                  <text x="14" y="11" textAnchor="middle" fontSize="9" fill={row.style.color} fontFamily="sans-serif">
+                    {row.style.symbol}
+                  </text>
+                </svg>
+                {row.name}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
-      {/* Waste table */}
+      {/* Product table with checkboxes */}
       {wasteRows.length > 0 && (
         <div>
-          <h2 className="text-sm font-semibold text-neutral-700 mb-3">Top Produtos — Consumo vs Desperdício</h2>
+          <h2 className="text-sm font-semibold text-neutral-700 mb-3">Produtos — Consumo vs Desperdício</h2>
           <div className="bg-white rounded-2xl border border-neutral-100 shadow-sm overflow-x-auto">
             <table className="w-full text-sm">
               <thead className="bg-neutral-50">
                 <tr>
-                  <th className="text-left px-6 py-3 text-xs font-semibold uppercase tracking-widest text-neutral-400">Produto</th>
+                  <th className="w-10 px-3 py-3" />
+                  <th className="w-8 px-1 py-3" />
+                  <th className="text-left px-3 py-3 text-xs font-semibold uppercase tracking-widest text-neutral-400">Produto</th>
                   <th className="text-center px-4 py-3 text-xs font-semibold uppercase tracking-widest text-neutral-400">Consumido</th>
+                  <th className="text-center px-4 py-3 text-xs font-semibold uppercase tracking-widest text-neutral-400">Unidade</th>
                   <th className="text-center px-4 py-3 text-xs font-semibold uppercase tracking-widest text-neutral-400">Desperdiçado</th>
                   <th className="text-center px-4 py-3 text-xs font-semibold uppercase tracking-widest text-neutral-400">% Desperdício</th>
                   <th className="text-center px-4 py-3 text-xs font-semibold uppercase tracking-widest text-neutral-400">Estado</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-neutral-50">
-                {wasteRows.map(row => (
-                  <tr key={row.name} className="hover:bg-neutral-50">
-                    <td className="px-6 py-3 font-medium text-neutral-800">{row.name}</td>
-                    <td className="px-4 py-3 text-center text-neutral-600">{row.consumed} {row.unit}</td>
-                    <td className="px-4 py-3 text-center text-neutral-500">{row.waste} {row.unit}</td>
-                    <td className="px-4 py-3 text-center text-neutral-600">{row.pct}%</td>
-                    <td className="px-4 py-3 text-center">
-                      <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${row.color}`}>{row.badge}</span>
-                    </td>
-                  </tr>
-                ))}
+                {wasteRows.map(row => {
+                  const isSelected = selectedProducts.has(row.name);
+                  return (
+                    <tr
+                      key={row.name}
+                      onClick={() => toggleProduct(row.name)}
+                      className={`cursor-pointer transition-colors hover:bg-neutral-50 ${!isSelected ? "opacity-50" : ""}`}
+                    >
+                      {/* Checkbox */}
+                      <td className="px-3 py-3">
+                        <div className={`w-4 h-4 rounded border-2 flex items-center justify-center transition-colors ${isSelected ? "bg-neutral-900 border-neutral-900" : "border-neutral-300 bg-white"}`}>
+                          {isSelected && (
+                            <svg width="8" height="6" viewBox="0 0 8 6">
+                              <polyline points="1,3 3,5 7,1" fill="none" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                            </svg>
+                          )}
+                        </div>
+                      </td>
+                      {/* Color dot / symbol */}
+                      <td className="px-1 py-3 text-center text-base leading-none select-none" style={{ color: isSelected ? row.style.color : "#d1d5db" }}>
+                        {row.style.symbol}
+                      </td>
+                      <td className={`px-3 py-3 font-medium ${isSelected ? "text-neutral-800" : "text-neutral-400"}`}>{row.name}</td>
+                      <td className={`px-4 py-3 text-center ${isSelected ? "text-neutral-700 font-medium" : "text-neutral-400"}`}>{row.consumed}</td>
+                      <td className={`px-4 py-3 text-center ${isSelected ? "text-neutral-500" : "text-neutral-400"}`}>{row.unit || "—"}</td>
+                      <td className={`px-4 py-3 text-center ${isSelected ? "text-neutral-500" : "text-neutral-400"}`}>{row.waste}</td>
+                      <td className={`px-4 py-3 text-center ${isSelected ? "text-neutral-600" : "text-neutral-400"}`}>{row.pct}%</td>
+                      <td className="px-4 py-3 text-center">
+                        <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${isSelected ? row.badgeColor : "bg-neutral-100 text-neutral-400"}`}>
+                          {row.badge}
+                        </span>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
         </div>
       )}
 
+      {/* Bar chart */}
+      <div className="bg-white rounded-2xl border border-neutral-100 p-5 shadow-sm">
+        <h3 className="text-sm font-semibold text-neutral-700 mb-4">Consumo por bar (%)</h3>
+        <canvas ref={barCanvasRef} />
+      </div>
+
       {/* Bar performance */}
-      {barPerfRows.length > 0 && !productFilter && (
+      {barPerfRows.length > 0 && (
         <div>
           <h2 className="text-sm font-semibold text-neutral-700 mb-3">Desempenho dos Bares</h2>
           <div className="bg-white rounded-2xl border border-neutral-100 shadow-sm overflow-hidden">
@@ -346,7 +410,7 @@ function ResumoTab({ stats, bars, dayNames, chartJSReady, productFilter, setProd
 }
 
 // ─── Por produto tab ──────────────────────────────────────────────────────────
-function PorProdutoTab({ stats, bars, dayNames, setProductFilter, setTab }) {
+function PorProdutoTab({ stats, bars, dayNames, setTab }) {
   const rows = Object.entries(stats.productData)
     .sort((a, b) => b[1].consumed - a[1].consumed)
     .map(([name, pd]) => {
@@ -383,8 +447,8 @@ function PorProdutoTab({ stats, bars, dayNames, setProductFilter, setTab }) {
               <tr
                 key={row.name}
                 className="hover:bg-neutral-50 cursor-pointer"
-                onClick={() => { setProductFilter(row.name); setTab("resumo"); }}
-                title="Ver detalhe no Resumo"
+                onClick={() => setTab("resumo")}
+                title="Ver no Resumo"
               >
                 <td className="px-6 py-3 font-medium text-neutral-800 hover:underline">{row.name}</td>
                 <td className="px-4 py-3 text-center text-neutral-500">{row.unit || "—"}</td>
@@ -400,7 +464,7 @@ function PorProdutoTab({ stats, bars, dayNames, setProductFilter, setTab }) {
           </tbody>
         </table>
       </div>
-      <p className="text-xs text-neutral-400 mt-3">Clica numa linha para ver o detalhe desse produto no Resumo.</p>
+      <p className="text-xs text-neutral-400 mt-3">Clica numa linha para voltar ao Resumo.</p>
     </div>
   );
 }
@@ -418,7 +482,6 @@ function PorBarTab({ stats, bars, dayNames, reports }) {
       const actual = reports.filter(r => r.bar_id === bar.id && ["opening", "closing"].includes(r.report_type)).length;
       const pct = expected > 0 ? Math.round((actual / expected) * 100) : 0;
 
-      // Top 3 products for this bar
       const topProducts = Object.entries(stats.productData)
         .map(([name, pd]) => ({ name, unit: pd.unit, consumed: pd.byBar[bar.id] || 0 }))
         .filter(p => p.consumed > 0)
@@ -496,7 +559,6 @@ function CompararTab({ festivals, chartJSReady }) {
     });
   };
 
-  // Load data for any newly selected festival
   useEffect(() => {
     const missing = selected.filter(id => !dataByFest[id] && !loadingIds.includes(id));
     if (!missing.length) return;
@@ -520,12 +582,7 @@ function CompararTab({ festivals, chartJSReady }) {
   }, [selected, festivals]);
 
   const readyData = selected.filter(id => dataByFest[id]);
-
-  // All products across selected festivals
   const allProducts = [...new Set(readyData.flatMap(id => Object.keys(dataByFest[id].productData)))].sort();
-
-  // Chart: total consumption per day per festival
-  // Use max day count across selected
   const allDayNames = readyData.length
     ? readyData.reduce((acc, id) => {
         const dn = dataByFest[id].dayNames;
@@ -572,11 +629,10 @@ function CompararTab({ festivals, chartJSReady }) {
 
   return (
     <div className="space-y-8">
-      {/* Festival selector */}
       <div>
         <div className="text-sm font-semibold text-neutral-700 mb-3">Seleciona até 3 festivais</div>
         <div className="flex flex-wrap gap-2">
-          {festivals.map((f, i) => {
+          {festivals.map((f) => {
             const isSelected = selected.includes(f.id);
             const color = isSelected ? COMPARE_COLORS[selected.indexOf(f.id)] : null;
             return (
@@ -596,14 +652,11 @@ function CompararTab({ festivals, chartJSReady }) {
             );
           })}
         </div>
-        {loadingIds.length > 0 && (
-          <div className="text-xs text-neutral-400 mt-2">A carregar dados...</div>
-        )}
+        {loadingIds.length > 0 && <div className="text-xs text-neutral-400 mt-2">A carregar dados...</div>}
       </div>
 
       {readyData.length >= 2 && (
         <>
-          {/* Comparison table */}
           <div>
             <h2 className="text-sm font-semibold text-neutral-700 mb-3">Consumo por produto</h2>
             <div className="bg-white rounded-2xl border border-neutral-100 shadow-sm overflow-x-auto">
@@ -639,7 +692,6 @@ function CompararTab({ festivals, chartJSReady }) {
             </div>
           </div>
 
-          {/* Grouped bar chart */}
           <div className="bg-white rounded-2xl border border-neutral-100 p-5 shadow-sm">
             <h3 className="text-sm font-semibold text-neutral-700 mb-4">Consumo total por dia</h3>
             <canvas ref={chartRef} />
@@ -668,7 +720,6 @@ export default function Analytics() {
   const [movements, setMovements] = useState([]);
   const [loading, setLoading] = useState(false);
   const [tab, setTab] = useState("resumo");
-  const [productFilter, setProductFilter] = useState(null);
 
   useEffect(() => {
     db.Festival.list().then(fs => {
@@ -682,7 +733,6 @@ export default function Analytics() {
   useEffect(() => {
     if (!selectedId || !selectedFestival) { setBars([]); setReports([]); setMovements([]); return; }
     setLoading(true);
-    setProductFilter(null);
     Promise.all([
       getFestivalBars(selectedFestival),
       db.StockReport.filterByFestival(selectedId),
@@ -728,9 +778,6 @@ export default function Analytics() {
             <button key={t.key} onClick={() => setTab(t.key)}
               className={`px-5 py-2 rounded-xl text-sm font-medium transition-all ${tab === t.key ? "bg-neutral-900 text-white" : "bg-white border border-neutral-200 text-neutral-600 hover:border-neutral-400"}`}>
               {t.label}
-              {t.key === "resumo" && productFilter && (
-                <span className="ml-2 text-xs bg-white/20 px-1.5 py-0.5 rounded-full">{productFilter}</span>
-              )}
             </button>
           ))}
         </div>
@@ -743,14 +790,14 @@ export default function Analytics() {
           <>
             {tab === "resumo" && (
               stats ? (
+                // key={selectedId} forces ResumoTab to remount when festival changes,
+                // resetting selectedProducts to the new festival's first 3 products
                 <ResumoTab
+                  key={selectedId}
                   stats={stats}
                   bars={bars}
                   dayNames={dayNames}
                   chartJSReady={chartJSReady}
-                  productFilter={productFilter}
-                  setProductFilter={setProductFilter}
-                  setTab={setTab}
                 />
               ) : (
                 <div className="bg-white rounded-2xl border border-neutral-100 p-8 text-center text-neutral-400 text-sm">
@@ -765,7 +812,6 @@ export default function Analytics() {
                   stats={stats}
                   bars={bars}
                   dayNames={dayNames}
-                  setProductFilter={setProductFilter}
                   setTab={setTab}
                 />
               ) : (
