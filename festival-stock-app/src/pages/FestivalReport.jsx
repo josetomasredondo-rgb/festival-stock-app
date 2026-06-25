@@ -226,7 +226,6 @@ export default function FestivalReport() {
                                 <th className="text-left px-6 py-2 text-xs font-semibold text-neutral-400">Produto</th>
                                 <th className="text-center px-4 py-2 text-xs font-semibold text-blue-400">{reportTypeLabels.opening}</th>
                                 <th className="text-center px-4 py-2 text-xs font-semibold text-amber-400">Entradas</th>
-                                <th className="text-center px-4 py-2 text-xs font-semibold text-purple-400">Saídas</th>
                                 <th className="text-center px-4 py-2 text-xs font-semibold text-emerald-400">{reportTypeLabels.closing}</th>
                                 <th className="text-center px-4 py-2 text-xs font-semibold text-neutral-400">Consumido</th>
                                 <th className="text-left px-4 py-2 text-xs font-semibold text-neutral-400">Unid.</th>
@@ -238,7 +237,6 @@ export default function FestivalReport() {
                                   <td className="px-6 py-2.5 font-medium text-neutral-800">{row.name}</td>
                                   <td className="px-4 py-2.5 text-center text-neutral-600">{row.openQty ?? "-"}</td>
                                   <td className="px-4 py-2.5 text-center text-neutral-600">{row.entradas > 0 ? row.entradas : "-"}</td>
-                                  <td className="px-4 py-2.5 text-center text-purple-600">{row.saidas > 0 ? row.saidas : "-"}</td>
                                   <td className="px-4 py-2.5 text-center text-neutral-600">{row.closeQty ?? "-"}</td>
                                   <td className="px-4 py-2.5 text-center font-semibold text-neutral-900">{row.consumed ?? "-"}</td>
                                   <td className="px-4 py-2.5 text-neutral-400 text-xs">{row.unit}</td>
