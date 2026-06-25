@@ -4,8 +4,8 @@ import { supabase } from "./db";
 const AuthContext = createContext(null);
 
 export const ROLE_LABELS = {
-  bar_leader: "Responsável de Bar",
-  night_delivery: "Entrega Noturna",
+  bar_leader: "Chefe de Bar",
+  night_delivery: "Reposição",
   event_coordinator: "Coordenador de Evento",
   manager: "Gestor da Empresa",
 };
@@ -21,10 +21,10 @@ export const DEFAULT_SETTINGS = {
   num_days: 5,
   day_names: ["Day 1", "Day 2", "Day 3", "Day 4", "Day 5"],
   report_type_labels: {
-    opening: "Contagem de Abertura",
-    delivery: "Entrega Recebida",
-    night_delivery: "Entrega Noturna",
-    closing: "Contagem de Fecho",
+    opening: "Contagem Inicial",
+    delivery: "Reposição (Dia)",
+    night_delivery: "Reposição (Noite)",
+    closing: "Contagem Final",
   },
 };
 

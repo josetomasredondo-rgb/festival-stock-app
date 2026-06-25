@@ -328,18 +328,6 @@ export default function SubmitReport() {
                           list={`products-${idx}`}
                           className="w-full text-sm border-0 border-b border-neutral-200 focus:outline-none focus:border-neutral-900 py-1 bg-transparent" />
                         <datalist id={`products-${idx}`}>{products.map(p => <option key={p.id} value={p.name} />)}</datalist>
-                        {exceedsAvailable && (
-                          <div className="flex items-center gap-1 mt-1 text-red-600 text-xs">
-                            <AlertTriangle className="w-3 h-3 flex-shrink-0" />
-                            Fecho ({closeQty}) &gt; disponível ({available}) — impossível
-                          </div>
-                        )}
-                        {isLowStock && (
-                          <div className="flex items-center gap-1 mt-1 text-amber-700 text-xs">
-                            <AlertTriangle className="w-3 h-3 flex-shrink-0" />
-                            Stock baixo — consumido {consumed}, resta {closeQty}
-                          </div>
-                        )}
                         {isClosing && available !== null && !exceedsAvailable && !isLowStock && item.product_name && (
                           <div className="text-xs text-neutral-400 mt-1">Disponível: {available} · Consumido: {consumed}</div>
                         )}
@@ -348,6 +336,18 @@ export default function SubmitReport() {
                         <input type="number" min="0" placeholder="Qtd" value={item.quantity}
                           onChange={e => updateItem(idx, "quantity", e.target.value)}
                           className={`w-full text-sm border-0 border-b focus:outline-none py-1 bg-transparent ${exceedsAvailable ? "border-red-400 focus:border-red-600 text-red-700 font-semibold" : isLowStock ? "border-amber-400 focus:border-amber-600 text-amber-800 font-semibold" : "border-neutral-200 focus:border-neutral-900"}`} />
+                        {exceedsAvailable && (
+                          <div className="flex items-center gap-1 mt-1 text-red-600 text-xs">
+                            <AlertTriangle className="w-3 h-3 flex-shrink-0" />
+                            Acima do disponível ({available})
+                          </div>
+                        )}
+                        {isLowStock && (
+                          <div className="flex items-center gap-1 mt-1 text-amber-700 text-xs">
+                            <AlertTriangle className="w-3 h-3 flex-shrink-0" />
+                            Stock baixo (consumido {consumed})
+                          </div>
+                        )}
                       </div>
                       <div className="col-span-2">
                         <input type="text" placeholder="Unid." value={item.unit}

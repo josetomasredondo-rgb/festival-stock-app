@@ -50,7 +50,7 @@ export default function DailySheet() {
   };
 
   const festivalId = currentFestival?.id;
-  const canSeeSaidas = ["event_coordinator", "manager"].includes(role);
+  const canSeeSaidas = false; // Saídas column removed from DailySheet
   const canSeeWarehouse = ["event_coordinator", "manager"].includes(role);
 
   const reportDays = [...new Set(reports.map(r => r.festival_day).filter(Boolean))];
@@ -269,12 +269,9 @@ export default function DailySheet() {
                         <thead className="bg-neutral-50">
                           <tr>
                             <th className="text-left px-6 py-3 text-xs font-semibold uppercase tracking-widest text-neutral-400">Produto</th>
-                            <th className="text-center px-4 py-3 text-xs font-semibold uppercase tracking-widest text-blue-400">Abertura</th>
-                            <th className="text-center px-4 py-3 text-xs font-semibold uppercase tracking-widest text-amber-400">Entradas</th>
-                            {canSeeSaidas && (
-                              <th className="text-center px-4 py-3 text-xs font-semibold uppercase tracking-widest text-purple-400">Saídas</th>
-                            )}
-                            <th className="text-center px-4 py-3 text-xs font-semibold uppercase tracking-widest text-emerald-400">Fecho</th>
+                            <th className="text-center px-4 py-3 text-xs font-semibold uppercase tracking-widest text-blue-400">Inicial</th>
+                            <th className="text-center px-4 py-3 text-xs font-semibold uppercase tracking-widest text-amber-400">Reposição</th>
+                            <th className="text-center px-4 py-3 text-xs font-semibold uppercase tracking-widest text-emerald-400">Final</th>
                             <th className="text-center px-4 py-3 text-xs font-semibold uppercase tracking-widest text-neutral-400">Consumido</th>
                             <th className="text-left px-4 py-3 text-xs font-semibold uppercase tracking-widest text-neutral-400">Unid.</th>
                           </tr>
@@ -292,32 +289,35 @@ export default function DailySheet() {
                                   </div>
                                 )}
                               </td>
-                              {canSeeSaidas && (
-                                <td className="px-4 py-3 text-center text-purple-600 font-medium">{row.saidas}</td>
-                              )}
-                              <td className="px-4 py-3 text-center text-neutral-600">{row.closeQty}</td>
                               <td className="px-4 py-3 text-center">
-                                {row.consumed !== "-" ? (() => {
-                                  const c = Number(row.consumed);
+                                {(() => {
+                                  const c = row.consumed !== "-" ? Number(row.consumed) : null;
                                   const cq = row.closeQty !== "-" ? Number(row.closeQty) : null;
-                                  const isImpossible = c < 0;
-                                  const isLow = !isImpossible && cq !== null && cq < c;
+                                  const isImpossible = c !== null && c < 0;
+                                  const isLow = c !== null && c >= 0 && cq !== null && cq < c;
                                   return (
                                     <div>
-                                      <span className={`font-semibold ${isImpossible ? "text-red-500" : "text-neutral-800"}`}>{row.consumed}</span>
+                                      <span className={isImpossible ? "text-red-500 font-semibold" : isLow ? "text-amber-700 font-semibold" : "text-neutral-600"}>
+                                        {row.closeQty}
+                                      </span>
                                       {isImpossible && (
                                         <div className="flex items-center justify-center gap-1 text-xs text-red-500 mt-0.5">
-                                          <AlertTriangle className="w-3 h-3" /> fecho &gt; disponível
+                                          <AlertTriangle className="w-3 h-3" /> acima do disponível
                                         </div>
                                       )}
                                       {isLow && (
-                                        <div className="flex items-center justify-center gap-1 text-xs text-orange-500 mt-0.5">
+                                        <div className="flex items-center justify-center gap-1 text-xs text-amber-600 mt-0.5">
                                           <AlertTriangle className="w-3 h-3" /> stock baixo
                                         </div>
                                       )}
                                     </div>
                                   );
-                                })() : <span className="text-neutral-300">-</span>}
+                                })()}
+                              </td>
+                              <td className="px-4 py-3 text-center">
+                                {row.consumed !== "-" ? (
+                                  <span className={`font-semibold ${Number(row.consumed) < 0 ? "text-red-500" : "text-neutral-800"}`}>{row.consumed}</span>
+                                ) : <span className="text-neutral-300">-</span>}
                               </td>
                               <td className="px-4 py-3 text-neutral-400 text-xs">{row.unit}</td>
                             </tr>
