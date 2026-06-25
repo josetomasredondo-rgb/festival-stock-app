@@ -33,9 +33,8 @@ function AppRoutes() {
         <Route path="/FestivalSelect" element={<FestivalSelect />} />
         {role === "manager" && <Route path="/GlobalSettings" element={<GlobalSettings />} />}
         {role === "manager" && <Route path="/Analytics" element={<Analytics />} />}
-        {role === "manager" && <Route path="/SmartChecklist" element={<SmartChecklist />} />
+        {role === "manager" && <Route path="/SmartChecklist" element={<SmartChecklist />} />}
 
-        {/* Redirect to festival select if no festival chosen (non-manager) */}
         {!currentFestival && role !== "manager" ? (
           <Route path="*" element={<FestivalSelect />} />
         ) : (
