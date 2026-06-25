@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { Loader2, Flag, Settings } from "lucide-react";
+import { Loader2, Flag, Settings, ListChecks } from "lucide-react";
 import { useAuth } from "../lib/AuthContext";
 import db from "../lib/db";
 
@@ -59,17 +59,29 @@ export default function FestivalSelect() {
         </div>
 
         {/* Tabs */}
-        <div className="flex gap-2 mb-4">
-          {["ativos", ...(showClosed ? ["fechados"] : [])].map(t => (
+        <div className="flex gap-2 mb-4 flex-wrap">
+          {["ativos", ...(showClosed ? ["fechados"] : []), ...(role === "manager" ? ["preparar"] : [])].map(t => (
             <button key={t} onClick={() => setTab(t)}
               className={`px-5 py-2 rounded-xl text-sm font-medium transition-all ${tab === t ? "bg-neutral-900 text-white" : "bg-white border border-neutral-200 text-neutral-600 hover:border-neutral-400"}`}>
-              {t === "ativos" ? "Festivais Ativos" : "Festivais Fechados"}
+              {t === "ativos" ? "Festivais Ativos" : t === "fechados" ? "Festivais Fechados" : "Preparar Festival"}
             </button>
           ))}
         </div>
 
-        {/* Festival list */}
-        {loading ? (
+        {/* Festival list or Preparar */}
+        {tab === "preparar" ? (
+          <div className="bg-white rounded-2xl border border-neutral-100 shadow-sm p-8 text-center mb-4">
+            <ListChecks className="w-10 h-10 text-purple-500 mx-auto mb-4" />
+            <div className="font-bold text-neutral-900 mb-2">Preparar Próximo Festival</div>
+            <div className="text-sm text-neutral-400 mb-6">
+              Gera uma checklist de stock com base no histórico de festivais anteriores.
+            </div>
+            <button onClick={() => navigate("/SmartChecklist")}
+              className="px-6 py-3 bg-neutral-900 text-white rounded-xl text-sm font-semibold hover:bg-neutral-700 transition-colors">
+              Abrir Checklist
+            </button>
+          </div>
+        ) : loading ? (
           <div className="flex justify-center py-10"><Loader2 className="w-6 h-6 animate-spin text-neutral-400" /></div>
         ) : (
           <div className="space-y-2 mb-4">

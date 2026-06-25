@@ -2,7 +2,7 @@ import { useState, useEffect, useLayoutEffect, useRef, useMemo } from "react";
 import { Link } from "react-router-dom";
 import { ChevronLeft, Download, TrendingUp } from "lucide-react";
 import db, { getFestivalBars } from "../lib/db";
-import { useAuth } from "../lib/AuthContext";
+import { useAuth, useFestivalSettings } from "../lib/AuthContext";
 
 const CHARTJS_CDN = "https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js";
 const COMPARE_COLORS = ["#1D9E75", "#7F77DD", "#EF9F27"];
@@ -110,6 +110,7 @@ const TABS = [
   { key: "por_produto", label: "Por produto" },
   { key: "por_bar", label: "Por bar" },
   { key: "comparar", label: "Comparar festivais" },
+  { key: "relatorio_final", label: "Relatório Final" },
 ];
 
 function StatCard({ label, value, sub }) {
@@ -709,15 +710,220 @@ function CompararTab({ festivals, chartJSReady }) {
   );
 }
 
+// ─── Relatório Final tab ──────────────────────────────────────────────────────
+function computeConsumedFR(barId, day, reports, movements) {
+  const dr = reports.filter(r => r.bar_id === barId && r.festival_day === day);
+  const opening = dr.find(r => r.report_type === "opening");
+  const deliveries = dr.filter(r => ["delivery", "night_delivery"].includes(r.report_type));
+  const closing = dr.find(r => r.report_type === "closing");
+  const dm = movements.filter(m => m.festival_day === day);
+  const inMov = dm.filter(m => m.destination_type === "bar" && m.destination_id === barId);
+  const outMov = dm.filter(m => m.origin_type === "bar" && m.origin_id === barId);
+  const allProducts = [...new Set([
+    ...(opening?.items || []),
+    ...deliveries.flatMap(d => d.items || []),
+    ...(closing?.items || []),
+    ...inMov.flatMap(m => m.items || []),
+    ...outMov.flatMap(m => m.items || []),
+  ].map(i => i.product_name))].filter(Boolean);
+  return allProducts.map(name => {
+    const openQty = (opening?.items || []).find(i => i.product_name === name)?.quantity ?? null;
+    const delivQty = deliveries.reduce((s, d) => s + (Number((d.items || []).find(i => i.product_name === name)?.quantity) || 0), 0);
+    const inMovQty = inMov.reduce((s, m) => s + (Number((m.items || []).find(i => i.product_name === name)?.quantity) || 0), 0);
+    const entradas = delivQty + inMovQty;
+    const saidas = outMov.reduce((s, m) => s + (Number((m.items || []).find(i => i.product_name === name)?.quantity) || 0), 0);
+    const closeQty = (closing?.items || []).find(i => i.product_name === name)?.quantity ?? null;
+    const unit = [...(opening?.items || []), ...(closing?.items || [])].find(i => i.product_name === name)?.unit || "";
+    let consumed = null;
+    if (openQty !== null && closeQty !== null) consumed = (Number(openQty) + entradas - saidas) - Number(closeQty);
+    return { name, openQty, entradas, closeQty, consumed, unit };
+  });
+}
+
+function RelatorioFinalTab({ bars, reports, movements, dayNames, warehouses, reportTypeLabels }) {
+  const productTotals = {};
+  bars.forEach(bar => {
+    dayNames.forEach(day => {
+      computeConsumedFR(bar.id, day, reports, movements).forEach(row => {
+        if (row.consumed !== null) {
+          if (!productTotals[row.name]) productTotals[row.name] = { consumed: 0, unit: row.unit };
+          productTotals[row.name].consumed += row.consumed;
+        }
+      });
+    });
+  });
+
+  const barDayData = bars.map(bar => ({
+    bar,
+    days: dayNames.map(day => {
+      const rows = computeConsumedFR(bar.id, day, reports, movements);
+      const hasData = reports.some(r => r.bar_id === bar.id && r.festival_day === day)
+        || movements.some(m => m.festival_day === day && (
+          (m.destination_type === "bar" && m.destination_id === bar.id) ||
+          (m.origin_type === "bar" && m.origin_id === bar.id)
+        ));
+      return { day, rows, hasData };
+    }),
+  }));
+
+  const warehouseData = (warehouses || []).map(wh => {
+    const stockMap = {};
+    (wh.initial_stock || []).forEach(item => {
+      stockMap[item.product_name] = { product_name: item.product_name, unit: item.unit, initial: Number(item.quantity) || 0, current: Number(item.quantity) || 0 };
+    });
+    movements.filter(m => m.origin_type === "warehouse" && m.origin_id === wh.id)
+      .forEach(m => (m.items || []).forEach(item => {
+        if (!stockMap[item.product_name]) stockMap[item.product_name] = { product_name: item.product_name, unit: item.unit, initial: 0, current: 0 };
+        stockMap[item.product_name].current -= Number(item.quantity) || 0;
+      }));
+    movements.filter(m => m.type === "restock" && m.destination_id === wh.id)
+      .forEach(m => (m.items || []).forEach(item => {
+        if (!stockMap[item.product_name]) stockMap[item.product_name] = { product_name: item.product_name, unit: item.unit, initial: 0, current: 0 };
+        stockMap[item.product_name].current += Number(item.quantity) || 0;
+      }));
+    return { warehouse: wh, rows: Object.values(stockMap).map(r => ({ ...r, consumed: r.initial - r.current })) };
+  });
+
+  if (bars.length === 0) {
+    return <div className="bg-white rounded-2xl border border-neutral-100 p-8 text-center text-neutral-400 text-sm">Seleciona um festival com dados para ver o relatório final.</div>;
+  }
+
+  return (
+    <div className="space-y-10">
+      <div className="flex justify-end print:hidden">
+        <button onClick={() => window.print()}
+          className="flex items-center gap-2 px-4 py-2.5 bg-neutral-900 text-white rounded-xl text-sm font-medium hover:bg-neutral-700 transition-colors">
+          <Download className="w-4 h-4" /> Imprimir / Exportar
+        </button>
+      </div>
+
+      <section>
+        <h2 className="text-lg font-bold text-neutral-800 mb-4">Consumo Total (Todos os Bares · Todos os Dias)</h2>
+        <div className="bg-white rounded-2xl border border-neutral-100 shadow-sm overflow-hidden">
+          <table className="w-full text-sm">
+            <thead className="bg-neutral-50">
+              <tr>
+                <th className="text-left px-6 py-3 text-xs font-semibold uppercase tracking-widest text-neutral-400">Produto</th>
+                <th className="text-center px-6 py-3 text-xs font-semibold uppercase tracking-widest text-neutral-400">Total Consumido</th>
+                <th className="text-left px-6 py-3 text-xs font-semibold uppercase tracking-widest text-neutral-400">Unid.</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-neutral-50">
+              {Object.entries(productTotals).length === 0 ? (
+                <tr><td colSpan={3} className="px-6 py-8 text-center text-neutral-300">Sem dados disponíveis</td></tr>
+              ) : Object.entries(productTotals).map(([name, { consumed, unit }]) => (
+                <tr key={name} className="hover:bg-neutral-50">
+                  <td className="px-6 py-3 font-medium text-neutral-800">{name}</td>
+                  <td className="px-6 py-3 text-center font-bold text-neutral-900">{consumed}</td>
+                  <td className="px-6 py-3 text-neutral-400 text-xs">{unit}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      {warehouseData.length > 0 && warehouseData.some(w => w.rows.length > 0) && (
+        <section>
+          <h2 className="text-lg font-bold text-neutral-800 mb-4">Consumo do Armazém</h2>
+          <div className="space-y-4">
+            {warehouseData.map(({ warehouse, rows }) => rows.length > 0 ? (
+              <div key={warehouse.id} className="bg-white rounded-2xl border border-neutral-100 shadow-sm overflow-hidden">
+                <div className="px-6 py-3 bg-emerald-50 border-b border-emerald-100">
+                  <div className="font-semibold text-emerald-900">{warehouse.name}</div>
+                </div>
+                <table className="w-full text-sm">
+                  <thead className="bg-neutral-50">
+                    <tr>
+                      <th className="text-left px-6 py-2 text-xs font-semibold text-neutral-400">Produto</th>
+                      <th className="text-center px-4 py-2 text-xs font-semibold text-neutral-400">Stock Inicial</th>
+                      <th className="text-center px-4 py-2 text-xs font-semibold text-emerald-600">Stock Final</th>
+                      <th className="text-center px-4 py-2 text-xs font-semibold text-neutral-400">Consumido</th>
+                      <th className="text-left px-4 py-2 text-xs font-semibold text-neutral-400">Unid.</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-neutral-50">
+                    {rows.map(row => (
+                      <tr key={row.product_name} className="hover:bg-neutral-50">
+                        <td className="px-6 py-2.5 font-medium text-neutral-800">{row.product_name}</td>
+                        <td className="px-4 py-2.5 text-center text-neutral-500">{row.initial}</td>
+                        <td className="px-4 py-2.5 text-center font-semibold text-emerald-700">{row.current}</td>
+                        <td className="px-4 py-2.5 text-center font-semibold text-neutral-900">{row.consumed}</td>
+                        <td className="px-4 py-2.5 text-neutral-400 text-xs">{row.unit}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : null)}
+          </div>
+        </section>
+      )}
+
+      <section>
+        <h2 className="text-lg font-bold text-neutral-800 mb-4">Detalhe por Bar</h2>
+        <div className="space-y-8">
+          {barDayData.map(({ bar, days }) => (
+            <div key={bar.id} className="bg-white rounded-2xl border border-neutral-100 shadow-sm overflow-hidden">
+              <div className="px-6 py-4 border-b border-neutral-100 bg-neutral-50">
+                <div className="font-bold text-neutral-900">{bar.name}</div>
+                {bar.leader_name && <div className="text-xs text-neutral-400">Responsável: {bar.leader_name}</div>}
+              </div>
+              {days.map(({ day, rows, hasData }) => (
+                hasData && rows.length > 0 ? (
+                  <div key={day}>
+                    <div className="px-6 py-2 bg-neutral-50 border-t border-neutral-100">
+                      <span className="text-xs font-semibold uppercase tracking-widest text-neutral-500">{day}</span>
+                    </div>
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="border-t border-neutral-50">
+                          <th className="text-left px-6 py-2 text-xs font-semibold text-neutral-400">Produto</th>
+                          <th className="text-center px-4 py-2 text-xs font-semibold text-blue-400">{reportTypeLabels?.opening || "Contagem Inicial"}</th>
+                          <th className="text-center px-4 py-2 text-xs font-semibold text-amber-400">Entradas</th>
+                          <th className="text-center px-4 py-2 text-xs font-semibold text-emerald-400">{reportTypeLabels?.closing || "Contagem Final"}</th>
+                          <th className="text-center px-4 py-2 text-xs font-semibold text-neutral-400">Consumido</th>
+                          <th className="text-left px-4 py-2 text-xs font-semibold text-neutral-400">Unid.</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-neutral-50">
+                        {rows.map(row => (
+                          <tr key={row.name} className="hover:bg-neutral-50">
+                            <td className="px-6 py-2.5 font-medium text-neutral-800">{row.name}</td>
+                            <td className="px-4 py-2.5 text-center text-neutral-600">{row.openQty ?? "-"}</td>
+                            <td className="px-4 py-2.5 text-center text-neutral-600">{row.entradas > 0 ? row.entradas : "-"}</td>
+                            <td className="px-4 py-2.5 text-center text-neutral-600">{row.closeQty ?? "-"}</td>
+                            <td className="px-4 py-2.5 text-center font-semibold text-neutral-900">{row.consumed ?? "-"}</td>
+                            <td className="px-4 py-2.5 text-neutral-400 text-xs">{row.unit}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : null
+              ))}
+              {days.every(d => !d.hasData) && (
+                <div className="px-6 py-6 text-center text-sm text-neutral-300">Sem relatórios submetidos para este bar</div>
+              )}
+            </div>
+          ))}
+        </div>
+      </section>
+    </div>
+  );
+}
+
 // ─── Main component ───────────────────────────────────────────────────────────
 export default function Analytics() {
   const chartJSReady = useChartJS();
+  const { reportTypeLabels } = useFestivalSettings();
 
   const [festivals, setFestivals] = useState([]);
   const [selectedId, setSelectedId] = useState("");
   const [bars, setBars] = useState([]);
   const [reports, setReports] = useState([]);
   const [movements, setMovements] = useState([]);
+  const [warehouses, setWarehouses] = useState([]);
   const [loading, setLoading] = useState(false);
   const [tab, setTab] = useState("resumo");
 
@@ -731,13 +937,14 @@ export default function Analytics() {
   const selectedFestival = festivals.find(f => f.id === selectedId);
 
   useEffect(() => {
-    if (!selectedId || !selectedFestival) { setBars([]); setReports([]); setMovements([]); return; }
+    if (!selectedId || !selectedFestival) { setBars([]); setReports([]); setMovements([]); setWarehouses([]); return; }
     setLoading(true);
     Promise.all([
       getFestivalBars(selectedFestival),
       db.StockReport.filterByFestival(selectedId),
       db.Movement.filterByFestival(selectedId),
-    ]).then(([b, r, m]) => { setBars(b); setReports(r); setMovements(m); setLoading(false); });
+      db.Warehouse.filterByFestival(selectedId),
+    ]).then(([b, r, m, w]) => { setBars(b); setReports(r); setMovements(m); setWarehouses(w); setLoading(false); });
   }, [selectedId]);
 
   const dayNames = selectedFestival?.day_names?.length
@@ -840,6 +1047,17 @@ export default function Analytics() {
               <CompararTab
                 festivals={festivals}
                 chartJSReady={chartJSReady}
+              />
+            )}
+
+            {tab === "relatorio_final" && (
+              <RelatorioFinalTab
+                bars={bars}
+                reports={reports}
+                movements={movements}
+                dayNames={dayNames}
+                warehouses={warehouses}
+                reportTypeLabels={reportTypeLabels}
               />
             )}
           </>
