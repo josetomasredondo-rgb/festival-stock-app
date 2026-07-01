@@ -486,16 +486,31 @@ function BarDetailChart({ dayRows, dayNames, chartJSReady }) {
     })
   ).slice(0, PRODUCT_STYLES.length);
 
+  // All active by default (component remounts each time a bar is expanded)
+  const [selectedProducts, setSelectedProducts] = useState(() => new Set(activeProducts));
+
+  const toggleProduct = (name) => {
+    setSelectedProducts(prev => {
+      const next = new Set(prev);
+      if (next.has(name)) next.delete(name); else next.add(name);
+      return next;
+    });
+  };
+
+  const visibleProducts = activeProducts.filter(name => selectedProducts.has(name));
+
   useLayoutEffect(() => {
     if (!chartJSReady || !canvasRef.current) return;
     const Chart = window.Chart;
     if (chartInst.current) { chartInst.current.destroy(); chartInst.current = null; }
+    if (visibleProducts.length === 0) return;
 
     chartInst.current = new Chart(canvasRef.current, {
       type: "line",
       data: {
         labels: dayNames,
-        datasets: activeProducts.map((name, i) => {
+        datasets: visibleProducts.map(name => {
+          const i = activeProducts.indexOf(name);
           const style = PRODUCT_STYLES[i % PRODUCT_STYLES.length];
           return {
             label: name,
@@ -518,29 +533,54 @@ function BarDetailChart({ dayRows, dayNames, chartJSReady }) {
       },
       options: {
         responsive: true,
-        plugins: {
-          legend: { position: "bottom", labels: { boxWidth: 12, padding: 16, font: { size: 12 } } },
-        },
-        scales: {
-          y: { beginAtZero: true, ticks: { precision: 0 } },
-        },
+        plugins: { legend: { display: false } },
+        scales: { y: { beginAtZero: true, ticks: { precision: 0 } } },
       },
     });
 
     return () => {
       if (chartInst.current) { chartInst.current.destroy(); chartInst.current = null; }
     };
-  }, [chartJSReady, dayRows, dayNames.join(",")]);
+  }, [chartJSReady, selectedProducts, dayRows, dayNames.join(",")]);
 
   if (activeProducts.length === 0) return null;
 
   return (
     <div className="px-5 py-5 border-t border-neutral-100 bg-neutral-50/50">
       <div className="text-xs font-semibold uppercase tracking-widest text-neutral-400 mb-4">Consumo por dia</div>
-      {chartJSReady
-        ? <canvas ref={canvasRef} />
-        : <div className="flex justify-center py-6 text-xs text-neutral-300">A carregar gráfico...</div>
-      }
+      {!chartJSReady ? (
+        <div className="flex justify-center py-6 text-xs text-neutral-300">A carregar gráfico...</div>
+      ) : (
+        <>
+          {visibleProducts.length > 0
+            ? <canvas ref={canvasRef} />
+            : <div className="flex justify-center py-8 text-xs text-neutral-300">Nenhum produto selecionado</div>
+          }
+          {/* Product toggle pills */}
+          <div className="flex flex-wrap gap-2 mt-4 pt-3 border-t border-neutral-100">
+            {activeProducts.map((name, i) => {
+              const style = PRODUCT_STYLES[i % PRODUCT_STYLES.length];
+              const isSelected = selectedProducts.has(name);
+              return (
+                <button key={name} type="button" onClick={() => toggleProduct(name)}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium border transition-all ${
+                    isSelected ? "text-white border-transparent" : "bg-white border-neutral-200 text-neutral-400 hover:border-neutral-400"
+                  }`}
+                  style={isSelected ? { backgroundColor: style.color, borderColor: style.color } : {}}>
+                  <svg width="16" height="10" viewBox="0 0 16 10" className="shrink-0">
+                    <line x1="0" y1="5" x2="16" y2="5"
+                      stroke={isSelected ? "white" : style.color}
+                      strokeWidth="2"
+                      strokeDasharray={style.dash.length ? style.dash.join(",") : undefined}
+                    />
+                  </svg>
+                  {name}
+                </button>
+              );
+            })}
+          </div>
+        </>
+      )}
     </div>
   );
 }
@@ -650,8 +690,9 @@ function PorBarTab({ stats, bars, dayNames, reports, movements, chartJSReady }) 
                             <tr>
                               <th className="text-left px-5 py-2 text-xs font-semibold text-neutral-400">Produto</th>
                               <th className="text-center px-4 py-2 text-xs font-semibold text-blue-400">Inicial</th>
-                              <th className="text-center px-4 py-2 text-xs font-semibold text-amber-400">Entradas</th>
-                              <th className="text-center px-4 py-2 text-xs font-semibold text-emerald-400">Final</th>
+                              <th className="text-center px-4 py-2 text-xs font-semibold text-emerald-500">+Entradas</th>
+                              <th className="text-center px-4 py-2 text-xs font-semibold text-rose-400">−Saídas</th>
+                              <th className="text-center px-4 py-2 text-xs font-semibold text-teal-500">Final</th>
                               <th className="text-center px-4 py-2 text-xs font-semibold text-neutral-500">Consumido</th>
                               <th className="text-left px-4 py-2 text-xs font-semibold text-neutral-400">Unid.</th>
                             </tr>
@@ -660,9 +701,14 @@ function PorBarTab({ stats, bars, dayNames, reports, movements, chartJSReady }) 
                             {rows.map(row => (
                               <tr key={row.name} className="hover:bg-neutral-50">
                                 <td className="px-5 py-2.5 font-medium text-neutral-800">{row.name}</td>
-                                <td className="px-4 py-2.5 text-center text-neutral-600">{row.openQty ?? "—"}</td>
-                                <td className="px-4 py-2.5 text-center text-neutral-600">{row.entradas > 0 ? row.entradas : "—"}</td>
-                                <td className="px-4 py-2.5 text-center text-neutral-600">{row.closeQty ?? "—"}</td>
+                                <td className="px-4 py-2.5 text-center text-neutral-500">{row.openQty ?? "—"}</td>
+                                <td className="px-4 py-2.5 text-center font-medium text-emerald-600">
+                                  {row.entradas > 0 ? `+${row.entradas}` : "—"}
+                                </td>
+                                <td className="px-4 py-2.5 text-center font-medium text-rose-500">
+                                  {row.saidas > 0 ? `−${row.saidas}` : "—"}
+                                </td>
+                                <td className="px-4 py-2.5 text-center text-neutral-500">{row.closeQty ?? "—"}</td>
                                 <td className="px-4 py-2.5 text-center">
                                   <span className={`font-semibold ${row.consumed === null ? "text-neutral-300" : row.consumed < 0 ? "text-red-500" : "text-neutral-900"}`}>
                                     {row.consumed ?? "—"}
@@ -878,7 +924,7 @@ function computeConsumedFR(barId, day, reports, movements) {
     const unit = [...(opening?.items || []), ...(closing?.items || [])].find(i => i.product_name === name)?.unit || "";
     let consumed = null;
     if (openQty !== null && closeQty !== null) consumed = (Number(openQty) + entradas - saidas) - Number(closeQty);
-    return { name, openQty, entradas, closeQty, consumed, unit };
+    return { name, openQty, entradas, saidas, closeQty, consumed, unit };
   });
 }
 
