@@ -689,8 +689,7 @@ function PorBarTab({ stats, bars, dayNames, reports, movements, chartJSReady }) 
                             <tr>
                               <th className="text-left px-5 py-2 text-xs font-semibold text-neutral-400">Produto</th>
                               <th className="text-center px-4 py-2 text-xs font-semibold text-blue-400">Inicial</th>
-                              <th className="text-center px-4 py-2 text-xs font-semibold text-emerald-500">+Entradas</th>
-                              <th className="text-center px-4 py-2 text-xs font-semibold text-rose-400">−Saídas</th>
+                              <th className="text-center px-4 py-2 text-xs font-semibold text-amber-400">Entradas</th>
                               <th className="text-center px-4 py-2 text-xs font-semibold text-teal-500">Final</th>
                               <th className="text-center px-4 py-2 text-xs font-semibold text-neutral-500">Consumido</th>
                               <th className="text-left px-4 py-2 text-xs font-semibold text-neutral-400">Unid.</th>
@@ -701,11 +700,8 @@ function PorBarTab({ stats, bars, dayNames, reports, movements, chartJSReady }) 
                               <tr key={row.name} className="hover:bg-neutral-50">
                                 <td className="px-5 py-2.5 font-medium text-neutral-800">{row.name}</td>
                                 <td className="px-4 py-2.5 text-center text-neutral-500">{row.openQty ?? "—"}</td>
-                                <td className="px-4 py-2.5 text-center font-medium text-emerald-600">
-                                  {row.entradas > 0 ? `+${row.entradas}` : "—"}
-                                </td>
-                                <td className="px-4 py-2.5 text-center font-medium text-rose-500">
-                                  {row.saidas > 0 ? `−${row.saidas}` : "—"}
+                                <td className="px-4 py-2.5 text-center font-medium">
+                                  {(() => { const net = row.entradas - row.saidas; return net === 0 ? "—" : <span className={net > 0 ? "text-amber-600" : "text-rose-500"}>{net}</span>; })()}
                                 </td>
                                 <td className="px-4 py-2.5 text-center text-neutral-500">{row.closeQty ?? "—"}</td>
                                 <td className="px-4 py-2.5 text-center">
@@ -1068,7 +1064,6 @@ function RelatorioFinalTab({ bars, reports, movements, dayNames, warehouses, rep
                           <th className="text-left px-6 py-2 text-xs font-semibold text-neutral-400">Produto</th>
                           <th className="text-center px-4 py-2 text-xs font-semibold text-blue-400">{reportTypeLabels?.opening || "Contagem Inicial"}</th>
                           <th className="text-center px-4 py-2 text-xs font-semibold text-amber-400">Entradas</th>
-                          <th className="text-center px-4 py-2 text-xs font-semibold text-rose-400">−Saídas</th>
                           <th className="text-center px-4 py-2 text-xs font-semibold text-emerald-400">{reportTypeLabels?.closing || "Contagem Final"}</th>
                           <th className="text-center px-4 py-2 text-xs font-semibold text-neutral-400">Consumido</th>
                           <th className="text-left px-4 py-2 text-xs font-semibold text-neutral-400">Unid.</th>
@@ -1079,8 +1074,9 @@ function RelatorioFinalTab({ bars, reports, movements, dayNames, warehouses, rep
                           <tr key={row.name} className="hover:bg-neutral-50">
                             <td className="px-6 py-2.5 font-medium text-neutral-800">{row.name}</td>
                             <td className="px-4 py-2.5 text-center text-neutral-600">{row.openQty ?? "-"}</td>
-                            <td className="px-4 py-2.5 text-center text-neutral-600">{row.entradas > 0 ? `+${row.entradas}` : "—"}</td>
-                            <td className="px-4 py-2.5 text-center font-medium text-rose-500">{row.saidas > 0 ? `−${row.saidas}` : "—"}</td>
+                            <td className="px-4 py-2.5 text-center font-medium">
+                              {(() => { const net = row.entradas - row.saidas; return net === 0 ? "—" : <span className={net > 0 ? "text-amber-600" : "text-rose-500"}>{net}</span>; })()}
+                            </td>
                             <td className="px-4 py-2.5 text-center text-neutral-600">{row.closeQty ?? "-"}</td>
                             <td className="px-4 py-2.5 text-center font-semibold text-neutral-900">{row.consumed ?? "-"}</td>
                             <td className="px-4 py-2.5 text-neutral-400 text-xs">{row.unit}</td>
