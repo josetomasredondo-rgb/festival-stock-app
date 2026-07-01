@@ -1068,6 +1068,7 @@ function RelatorioFinalTab({ bars, reports, movements, dayNames, warehouses, rep
                           <th className="text-left px-6 py-2 text-xs font-semibold text-neutral-400">Produto</th>
                           <th className="text-center px-4 py-2 text-xs font-semibold text-blue-400">{reportTypeLabels?.opening || "Contagem Inicial"}</th>
                           <th className="text-center px-4 py-2 text-xs font-semibold text-amber-400">Entradas</th>
+                          <th className="text-center px-4 py-2 text-xs font-semibold text-rose-400">−Saídas</th>
                           <th className="text-center px-4 py-2 text-xs font-semibold text-emerald-400">{reportTypeLabels?.closing || "Contagem Final"}</th>
                           <th className="text-center px-4 py-2 text-xs font-semibold text-neutral-400">Consumido</th>
                           <th className="text-left px-4 py-2 text-xs font-semibold text-neutral-400">Unid.</th>
@@ -1078,7 +1079,8 @@ function RelatorioFinalTab({ bars, reports, movements, dayNames, warehouses, rep
                           <tr key={row.name} className="hover:bg-neutral-50">
                             <td className="px-6 py-2.5 font-medium text-neutral-800">{row.name}</td>
                             <td className="px-4 py-2.5 text-center text-neutral-600">{row.openQty ?? "-"}</td>
-                            <td className="px-4 py-2.5 text-center text-neutral-600">{row.entradas > 0 ? row.entradas : "-"}</td>
+                            <td className="px-4 py-2.5 text-center text-neutral-600">{row.entradas > 0 ? `+${row.entradas}` : "—"}</td>
+                            <td className="px-4 py-2.5 text-center font-medium text-rose-500">{row.saidas > 0 ? `−${row.saidas}` : "—"}</td>
                             <td className="px-4 py-2.5 text-center text-neutral-600">{row.closeQty ?? "-"}</td>
                             <td className="px-4 py-2.5 text-center font-semibold text-neutral-900">{row.consumed ?? "-"}</td>
                             <td className="px-4 py-2.5 text-neutral-400 text-xs">{row.unit}</td>
