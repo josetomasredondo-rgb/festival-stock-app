@@ -1,6 +1,6 @@
 import { useState, useEffect, useLayoutEffect, useRef, useMemo } from "react";
 import { Link } from "react-router-dom";
-import { ChevronLeft, Download, TrendingUp } from "lucide-react";
+import { ChevronLeft, ChevronDown, Download, TrendingUp } from "lucide-react";
 import db, { getFestivalBars } from "../lib/db";
 import { useAuth, useFestivalSettings } from "../lib/AuthContext";
 
@@ -471,7 +471,9 @@ function PorProdutoTab({ stats, bars, dayNames, setTab }) {
 }
 
 // ─── Por bar tab ──────────────────────────────────────────────────────────────
-function PorBarTab({ stats, bars, dayNames, reports }) {
+function PorBarTab({ stats, bars, dayNames, reports, movements }) {
+  const [expandedBarId, setExpandedBarId] = useState(null);
+
   const cards = bars
     .map(bar => {
       const total = stats.barTotals[bar.id]?.consumed || 0;
@@ -487,7 +489,7 @@ function PorBarTab({ stats, bars, dayNames, reports }) {
         .map(([name, pd]) => ({ name, unit: pd.unit, consumed: pd.byBar[bar.id] || 0 }))
         .filter(p => p.consumed > 0)
         .sort((a, b) => b.consumed - a.consumed)
-        .slice(0, 3);
+        .slice(0, 5);
 
       return { bar, total, daysWithData, pct, topProducts };
     })
@@ -498,48 +500,112 @@ function PorBarTab({ stats, bars, dayNames, reports }) {
   }
 
   return (
-    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-      {cards.map(({ bar, total, daysWithData, pct, topProducts }) => (
-        <div key={bar.id} className="bg-white rounded-2xl border border-neutral-100 p-5 shadow-sm">
-          <div className="flex items-start justify-between mb-3">
-            <div>
-              <div className="font-bold text-neutral-900">{bar.name}</div>
-              <div className="text-xs text-neutral-400 mt-0.5">{daysWithData} {daysWithData === 1 ? "dia" : "dias"} com dados</div>
-            </div>
-            <div className="text-right">
-              <div className="text-xl font-bold text-neutral-900">{total}</div>
-              <div className="text-xs text-neutral-400">unidades consumidas</div>
-            </div>
-          </div>
+    <div className="space-y-3">
+      {cards.map(({ bar, total, daysWithData, pct, topProducts }) => {
+        const isExpanded = expandedBarId === bar.id;
 
-          {topProducts.length > 0 && (
-            <div className="border-t border-neutral-50 pt-3 mb-3">
-              <div className="text-xs font-semibold uppercase tracking-widest text-neutral-400 mb-2">Top produtos</div>
-              <table className="w-full text-sm">
-                <tbody>
-                  {topProducts.map(p => (
-                    <tr key={p.name}>
-                      <td className="py-0.5 text-neutral-700">{p.name}</td>
-                      <td className="py-0.5 text-right text-neutral-500">{p.consumed} {p.unit}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
+        const dayRows = isExpanded
+          ? dayNames.map(day => {
+              const rows = computeConsumedFR(bar.id, day, reports, movements);
+              const hasData = reports.some(r => r.bar_id === bar.id && r.festival_day === day)
+                || movements.some(m => m.festival_day === day && (
+                  (m.destination_type === "bar" && m.destination_id === bar.id) ||
+                  (m.origin_type === "bar" && m.origin_id === bar.id)
+                ));
+              return { day, rows, hasData };
+            })
+          : [];
 
-          <div className="flex items-center justify-between border-t border-neutral-50 pt-3">
-            <span className="text-xs text-neutral-400">Relatórios submetidos</span>
-            <span className="text-xs font-medium text-neutral-700">{pct}%</span>
-          </div>
-          <div className="w-full bg-neutral-100 rounded-full h-1.5 mt-1">
+        return (
+          <div key={bar.id} className="bg-white rounded-2xl border border-neutral-100 shadow-sm overflow-hidden">
+            {/* Header — click to toggle */}
             <div
-              className={`h-1.5 rounded-full ${pct >= 90 ? "bg-emerald-500" : pct >= 70 ? "bg-amber-400" : "bg-red-400"}`}
-              style={{ width: `${pct}%` }}
-            />
+              className="flex items-center gap-4 px-5 py-4 cursor-pointer hover:bg-neutral-50 transition-colors select-none"
+              onClick={() => setExpandedBarId(isExpanded ? null : bar.id)}
+            >
+              <div className="flex-1 min-w-0">
+                <div className="font-bold text-neutral-900">{bar.name}</div>
+                {bar.leader_name && <div className="text-xs text-neutral-400">{bar.leader_name}</div>}
+              </div>
+              <div className="flex items-center gap-5 text-center shrink-0">
+                <div>
+                  <div className="text-lg font-bold text-neutral-900">{total}</div>
+                  <div className="text-xs text-neutral-400">unidades</div>
+                </div>
+                <div>
+                  <div className="text-sm font-medium text-neutral-700">{daysWithData}/{dayNames.length}</div>
+                  <div className="text-xs text-neutral-400">dias</div>
+                </div>
+                <div>
+                  <div className={`text-sm font-semibold ${pct >= 90 ? "text-emerald-600" : pct >= 70 ? "text-amber-600" : "text-red-500"}`}>
+                    {pct}%
+                  </div>
+                  <div className="text-xs text-neutral-400">relatórios</div>
+                </div>
+              </div>
+              <ChevronDown className={`w-4 h-4 text-neutral-400 shrink-0 transition-transform duration-200 ${isExpanded ? "rotate-180" : ""}`} />
+            </div>
+
+            {/* Collapsed: top products as pills */}
+            {!isExpanded && topProducts.length > 0 && (
+              <div className="px-5 pb-4 flex flex-wrap gap-2 border-t border-neutral-50 pt-3">
+                {topProducts.map(p => (
+                  <span key={p.name} className="text-xs bg-neutral-100 text-neutral-600 px-2.5 py-0.5 rounded-full">
+                    {p.name} · <span className="font-medium">{p.consumed}</span> {p.unit}
+                  </span>
+                ))}
+              </div>
+            )}
+
+            {/* Expanded: full per-day breakdown */}
+            {isExpanded && (
+              <div className="border-t border-neutral-100">
+                {dayRows.every(d => !d.hasData) ? (
+                  <div className="px-5 py-6 text-center text-sm text-neutral-300">Sem relatórios submetidos para este bar</div>
+                ) : dayRows.map(({ day, rows, hasData }) =>
+                  hasData && rows.length > 0 ? (
+                    <div key={day}>
+                      <div className="px-5 py-2 bg-neutral-50 border-t border-neutral-100">
+                        <span className="text-xs font-semibold uppercase tracking-widest text-neutral-500">{day}</span>
+                      </div>
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-sm">
+                          <thead>
+                            <tr>
+                              <th className="text-left px-5 py-2 text-xs font-semibold text-neutral-400">Produto</th>
+                              <th className="text-center px-4 py-2 text-xs font-semibold text-blue-400">Inicial</th>
+                              <th className="text-center px-4 py-2 text-xs font-semibold text-amber-400">Entradas</th>
+                              <th className="text-center px-4 py-2 text-xs font-semibold text-emerald-400">Final</th>
+                              <th className="text-center px-4 py-2 text-xs font-semibold text-neutral-500">Consumido</th>
+                              <th className="text-left px-4 py-2 text-xs font-semibold text-neutral-400">Unid.</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-neutral-50">
+                            {rows.map(row => (
+                              <tr key={row.name} className="hover:bg-neutral-50">
+                                <td className="px-5 py-2.5 font-medium text-neutral-800">{row.name}</td>
+                                <td className="px-4 py-2.5 text-center text-neutral-600">{row.openQty ?? "—"}</td>
+                                <td className="px-4 py-2.5 text-center text-neutral-600">{row.entradas > 0 ? row.entradas : "—"}</td>
+                                <td className="px-4 py-2.5 text-center text-neutral-600">{row.closeQty ?? "—"}</td>
+                                <td className="px-4 py-2.5 text-center">
+                                  <span className={`font-semibold ${row.consumed === null ? "text-neutral-300" : row.consumed < 0 ? "text-red-500" : "text-neutral-900"}`}>
+                                    {row.consumed ?? "—"}
+                                  </span>
+                                </td>
+                                <td className="px-4 py-2.5 text-neutral-400 text-xs">{row.unit}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  ) : null
+                )}
+              </div>
+            )}
           </div>
-        </div>
-      ))}
+        );
+      })}
     </div>
   );
 }
@@ -1035,6 +1101,7 @@ export default function Analytics() {
                   bars={bars}
                   dayNames={dayNames}
                   reports={reports}
+                  movements={movements}
                 />
               ) : (
                 <div className="bg-white rounded-2xl border border-neutral-100 p-8 text-center text-neutral-400 text-sm">
