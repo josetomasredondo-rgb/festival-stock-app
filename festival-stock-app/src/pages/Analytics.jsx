@@ -484,7 +484,7 @@ function BarDetailChart({ dayRows, dayNames, chartJSReady }) {
       const row = d.rows.find(r => r.name === name);
       return row && row.consumed !== null;
     })
-  ).slice(0, PRODUCT_STYLES.length);
+  );
 
   // All active by default (component remounts each time a bar is expanded)
   const [selectedProducts, setSelectedProducts] = useState(() => new Set(activeProducts));
