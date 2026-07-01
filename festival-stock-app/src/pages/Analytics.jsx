@@ -470,8 +470,83 @@ function PorProdutoTab({ stats, bars, dayNames, setTab }) {
   );
 }
 
+// ─── Bar detail chart ─────────────────────────────────────────────────────────
+function BarDetailChart({ dayRows, dayNames, chartJSReady }) {
+  const canvasRef = useRef(null);
+  const chartInst = useRef(null);
+
+  // All unique product names that appear across any day
+  const allNames = [...new Set(dayRows.flatMap(d => d.rows.map(r => r.name)))];
+
+  // Keep only products with at least one day where consumed is not null
+  const activeProducts = allNames.filter(name =>
+    dayRows.some(d => {
+      const row = d.rows.find(r => r.name === name);
+      return row && row.consumed !== null;
+    })
+  ).slice(0, PRODUCT_STYLES.length);
+
+  useLayoutEffect(() => {
+    if (!chartJSReady || !canvasRef.current) return;
+    const Chart = window.Chart;
+    if (chartInst.current) { chartInst.current.destroy(); chartInst.current = null; }
+
+    chartInst.current = new Chart(canvasRef.current, {
+      type: "line",
+      data: {
+        labels: dayNames,
+        datasets: activeProducts.map((name, i) => {
+          const style = PRODUCT_STYLES[i % PRODUCT_STYLES.length];
+          return {
+            label: name,
+            data: dayNames.map(day => {
+              const dr = dayRows.find(d => d.day === day);
+              const row = dr?.rows.find(r => r.name === name);
+              return row?.consumed ?? null;
+            }),
+            borderColor: style.color,
+            backgroundColor: style.color + "18",
+            borderDash: style.dash,
+            pointStyle: style.pointStyle,
+            pointRadius: 5,
+            pointHoverRadius: 7,
+            borderWidth: 2,
+            tension: 0.3,
+            spanGaps: false,
+          };
+        }),
+      },
+      options: {
+        responsive: true,
+        plugins: {
+          legend: { position: "bottom", labels: { boxWidth: 12, padding: 16, font: { size: 12 } } },
+        },
+        scales: {
+          y: { beginAtZero: true, ticks: { precision: 0 } },
+        },
+      },
+    });
+
+    return () => {
+      if (chartInst.current) { chartInst.current.destroy(); chartInst.current = null; }
+    };
+  }, [chartJSReady, dayRows, dayNames.join(",")]);
+
+  if (activeProducts.length === 0) return null;
+
+  return (
+    <div className="px-5 py-5 border-t border-neutral-100 bg-neutral-50/50">
+      <div className="text-xs font-semibold uppercase tracking-widest text-neutral-400 mb-4">Consumo por dia</div>
+      {chartJSReady
+        ? <canvas ref={canvasRef} />
+        : <div className="flex justify-center py-6 text-xs text-neutral-300">A carregar gráfico...</div>
+      }
+    </div>
+  );
+}
+
 // ─── Por bar tab ──────────────────────────────────────────────────────────────
-function PorBarTab({ stats, bars, dayNames, reports, movements }) {
+function PorBarTab({ stats, bars, dayNames, reports, movements, chartJSReady }) {
   const [expandedBarId, setExpandedBarId] = useState(null);
 
   const cards = bars
@@ -557,9 +632,10 @@ function PorBarTab({ stats, bars, dayNames, reports, movements }) {
               </div>
             )}
 
-            {/* Expanded: full per-day breakdown */}
+            {/* Expanded: chart + per-day breakdown */}
             {isExpanded && (
               <div className="border-t border-neutral-100">
+                <BarDetailChart dayRows={dayRows} dayNames={dayNames} chartJSReady={chartJSReady} />
                 {dayRows.every(d => !d.hasData) ? (
                   <div className="px-5 py-6 text-center text-sm text-neutral-300">Sem relatórios submetidos para este bar</div>
                 ) : dayRows.map(({ day, rows, hasData }) =>
@@ -1102,6 +1178,7 @@ export default function Analytics() {
                   dayNames={dayNames}
                   reports={reports}
                   movements={movements}
+                  chartJSReady={chartJSReady}
                 />
               ) : (
                 <div className="bg-white rounded-2xl border border-neutral-100 p-8 text-center text-neutral-400 text-sm">
