@@ -486,8 +486,7 @@ function BarDetailChart({ dayRows, dayNames, chartJSReady }) {
     })
   );
 
-  // All active by default (component remounts each time a bar is expanded)
-  const [selectedProducts, setSelectedProducts] = useState(() => new Set(activeProducts));
+  const [selectedProducts, setSelectedProducts] = useState(() => new Set());
 
   const toggleProduct = (name) => {
     setSelectedProducts(prev => {
