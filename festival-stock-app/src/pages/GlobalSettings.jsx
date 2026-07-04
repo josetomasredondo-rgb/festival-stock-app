@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   ChevronLeft, ChevronDown, Plus, Trash2, Pencil, Check, X, Loader2,
-  Calendar, Building2, Package, Archive
+  Calendar, Building2, Package, Archive, Users
 } from "lucide-react";
 import db from "../lib/db";
 import { useAuth, ROLE_LABELS } from "../lib/AuthContext";
@@ -28,11 +28,11 @@ function Chip({ label, color, onRemove }) {
 }
 
 // ── Festival form — collapsible sections ──────────────────────────────────────
-function FestivalFormNew({ allProducts, existingBars, existingWarehouses, onSave, onCancel, saving, initial, suggestedName }) {
-  const [open, setOpen] = useState({ info: true, bares: true, produtos: true, armazem: true });
+function FestivalFormNew({ allProducts, allUsers, existingBars, existingWarehouses, onSave, onCancel, saving, initial, suggestedName }) {
+  const [open, setOpen] = useState({ info: true, bares: true, produtos: true, armazem: true, pessoas: true });
   const toggle = (k) => setOpen(prev => ({ ...prev, [k]: !prev[k] }));
 
-  // ── Info state ──
+  // ── Info ──
   const [name, setName] = useState(initial?.name || suggestedName || "");
   const [startDate, setStartDate] = useState(initial?.start_date || "");
   const [endDate, setEndDate] = useState(initial?.end_date || "");
@@ -50,23 +50,38 @@ function FestivalFormNew({ allProducts, existingBars, existingWarehouses, onSave
     setDayNames(prev => Array.from({ length: num }, (_, i) => prev[i] || `Dia ${i + 1}`));
   };
 
-  // ── Bars state ──
+  // ── Bars — each bar carries leader_name and assignedUserIds ──
   const [formBars, setFormBars] = useState(() =>
     existingBars?.length
-      ? existingBars.map(b => ({ _key: b.id, id: b.id, name: b.name, location: b.location || "" }))
-      : [{ _key: "new_0", id: null, name: "", location: "" }]
+      ? existingBars.map(b => ({
+          _key: b.id,
+          id: b.id,
+          name: b.name,
+          location: b.location || "",
+          leader_name: b.leader_name || "",
+          assignedUserIds: b.assignedUserIds || [],
+        }))
+      : [{ _key: "new_0", id: null, name: "", location: "", leader_name: "", assignedUserIds: [] }]
   );
 
-  const addBar = () => setFormBars(prev => [...prev, { _key: `new_${Date.now()}`, id: null, name: "", location: "" }]);
+  const addBar = () => setFormBars(prev => [...prev, { _key: `new_${Date.now()}`, id: null, name: "", location: "", leader_name: "", assignedUserIds: [] }]);
   const updateBar = (_key, field, val) => setFormBars(prev => prev.map(b => b._key === _key ? { ...b, [field]: val } : b));
   const removeBar = (_key) => setFormBars(prev => prev.filter(b => b._key !== _key));
+  const assignUser = (_key, userId) => setFormBars(prev => prev.map(b =>
+    b._key === _key && !b.assignedUserIds.includes(userId)
+      ? { ...b, assignedUserIds: [...b.assignedUserIds, userId] }
+      : b
+  ));
+  const unassignUser = (_key, userId) => setFormBars(prev => prev.map(b =>
+    b._key === _key ? { ...b, assignedUserIds: b.assignedUserIds.filter(id => id !== userId) } : b
+  ));
 
-  // ── Products state ──
+  // ── Products ──
   const [productIds, setProductIds] = useState(initial?.product_ids || []);
   const toggleProduct = (id) => setProductIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
   const selectedProducts = allProducts.filter(p => productIds.includes(p.id));
 
-  // ── Warehouse state ──
+  // ── Warehouses ──
   const [warehouses, setWarehouses] = useState(() =>
     existingWarehouses?.length
       ? existingWarehouses.map(w => ({ id: w.id, name: w.name, initial_stock: w.initial_stock || [] }))
@@ -87,12 +102,17 @@ function FestivalFormNew({ allProducts, existingBars, existingWarehouses, onSave
     }));
   };
 
-  // ── Completion ──
+  // ── Completion checks ──
+  const namedBars = formBars.filter(b => b.name.trim());
   const infoComplete = !!name.trim() && dayNames.some(d => d.trim());
-  const baresComplete = formBars.some(b => b.name.trim());
+  const baresComplete = namedBars.length > 0;
   const produtosComplete = productIds.length > 0;
   const armazémComplete = warehouses.some(w => (w.initial_stock || []).some(s => (s.quantity || 0) > 0));
-  const dots = [infoComplete, baresComplete, produtosComplete, armazémComplete];
+  const pessoasComplete = namedBars.some(b => b.leader_name.trim() || b.assignedUserIds.length > 0);
+
+  const dots = [infoComplete, baresComplete, produtosComplete, armazémComplete, pessoasComplete];
+  const totalStock = warehouses.reduce((s, w) => s + (w.initial_stock || []).reduce((s2, i) => s2 + (i.quantity || 0), 0), 0);
+  const allAssignedIds = [...new Set(formBars.flatMap(b => b.assignedUserIds))];
 
   const handleSubmit = () => {
     if (!name.trim()) return;
@@ -102,14 +122,14 @@ function FestivalFormNew({ allProducts, existingBars, existingWarehouses, onSave
         num_days: numDays, day_names: dayNames,
         expected_attendance: Number(attendance) || 0,
         product_ids: productIds,
-        user_ids: initial?.user_ids || [],
+        user_ids: allAssignedIds,
       },
-      formBars.filter(b => b.name.trim()),
+      namedBars,
       warehouses
     );
   };
 
-  // ── Section header helper ──
+  // ── Section button helper ──
   const SectionBtn = ({ sKey, title, subtitle, Icon, borderCls, iconCls, bgCls }) => (
     <button type="button" onClick={() => toggle(sKey)}
       className="w-full flex items-center gap-4 p-5 text-left hover:bg-neutral-50 transition-colors">
@@ -124,9 +144,6 @@ function FestivalFormNew({ allProducts, existingBars, existingWarehouses, onSave
     </button>
   );
 
-  const namedBars = formBars.filter(b => b.name.trim()).length;
-  const totalStock = warehouses.reduce((s, w) => s + (w.initial_stock || []).reduce((s2, i) => s2 + (i.quantity || 0), 0), 0);
-
   return (
     <div className="space-y-3">
       {/* Progress bar */}
@@ -136,12 +153,12 @@ function FestivalFormNew({ allProducts, existingBars, existingWarehouses, onSave
         ))}
       </div>
 
-      {/* ── Section 1: Info ── */}
+      {/* ── 1: Info ── */}
       <div className="bg-white rounded-2xl border border-neutral-100 shadow-sm overflow-hidden border-l-4 border-l-orange-400">
         <SectionBtn sKey="info"
           title="Informação Geral"
           subtitle={name ? `${name}${startDate ? ` · ${startDate}` : ""}${numDays > 1 ? ` · ${numDays} dias` : ""}` : "Nome, datas e configuração"}
-          Icon={Calendar} borderCls="border-l-orange-400" iconCls="text-orange-500" bgCls="bg-orange-50" />
+          Icon={Calendar} borderCls="" iconCls="text-orange-500" bgCls="bg-orange-50" />
         {open.info && (
           <div className="border-t border-neutral-100 p-5 space-y-4">
             <input type="text" placeholder="Nome do festival *" value={name}
@@ -186,12 +203,12 @@ function FestivalFormNew({ allProducts, existingBars, existingWarehouses, onSave
         )}
       </div>
 
-      {/* ── Section 2: Bares ── */}
+      {/* ── 2: Bares ── */}
       <div className="bg-white rounded-2xl border border-neutral-100 shadow-sm overflow-hidden border-l-4 border-l-blue-400">
         <SectionBtn sKey="bares"
           title="Bares"
-          subtitle={namedBars > 0 ? `${namedBars} bar${namedBars !== 1 ? "es" : ""} adicionado${namedBars !== 1 ? "s" : ""}` : "Cria os bares do festival"}
-          Icon={Building2} borderCls="border-l-blue-400" iconCls="text-blue-500" bgCls="bg-blue-50" />
+          subtitle={namedBars.length > 0 ? `${namedBars.length} bar${namedBars.length !== 1 ? "es" : ""} adicionado${namedBars.length !== 1 ? "s" : ""}` : "Cria os bares do festival"}
+          Icon={Building2} borderCls="" iconCls="text-blue-500" bgCls="bg-blue-50" />
         {open.bares && (
           <div className="border-t border-neutral-100 p-5 space-y-2">
             {formBars.map(bar => (
@@ -199,7 +216,7 @@ function FestivalFormNew({ allProducts, existingBars, existingWarehouses, onSave
                 <input type="text" placeholder="Nome do bar *" value={bar.name}
                   onChange={e => updateBar(bar._key, "name", e.target.value)}
                   className="flex-1 border border-neutral-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-neutral-900" />
-                <input type="text" placeholder="Localização (opcional)" value={bar.location}
+                <input type="text" placeholder="Localização" value={bar.location}
                   onChange={e => updateBar(bar._key, "location", e.target.value)}
                   className="flex-1 border border-neutral-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-neutral-900" />
                 <button type="button" onClick={() => removeBar(bar._key)}
@@ -216,12 +233,12 @@ function FestivalFormNew({ allProducts, existingBars, existingWarehouses, onSave
         )}
       </div>
 
-      {/* ── Section 3: Produtos ── */}
+      {/* ── 3: Produtos ── */}
       <div className="bg-white rounded-2xl border border-neutral-100 shadow-sm overflow-hidden border-l-4 border-l-amber-400">
         <SectionBtn sKey="produtos"
           title="Produtos"
           subtitle={productIds.length > 0 ? `${productIds.length} produto${productIds.length !== 1 ? "s" : ""} selecionado${productIds.length !== 1 ? "s" : ""}` : "Seleciona os produtos do festival"}
-          Icon={Package} borderCls="border-l-amber-400" iconCls="text-amber-500" bgCls="bg-amber-50" />
+          Icon={Package} borderCls="" iconCls="text-amber-500" bgCls="bg-amber-50" />
         {open.produtos && (
           <div className="border-t border-neutral-100 p-5">
             {selectedProducts.length > 0 && (
@@ -246,14 +263,14 @@ function FestivalFormNew({ allProducts, existingBars, existingWarehouses, onSave
         )}
       </div>
 
-      {/* ── Section 4: Armazém ── */}
+      {/* ── 4: Armazém ── */}
       <div className="bg-white rounded-2xl border border-neutral-100 shadow-sm overflow-hidden border-l-4 border-l-teal-400">
         <SectionBtn sKey="armazem"
           title="Armazém"
           subtitle={totalStock > 0
             ? `${warehouses.length} armazém${warehouses.length !== 1 ? "éns" : ""} · ${totalStock} unidades`
             : selectedProducts.length > 0 ? "Define o stock inicial" : "Adiciona produtos primeiro"}
-          Icon={Archive} borderCls="border-l-teal-400" iconCls="text-teal-500" bgCls="bg-teal-50" />
+          Icon={Archive} borderCls="" iconCls="text-teal-500" bgCls="bg-teal-50" />
         {open.armazem && (
           <div className="border-t border-neutral-100 p-5 space-y-4">
             {warehouses.map((wh, wi) => (
@@ -295,6 +312,71 @@ function FestivalFormNew({ allProducts, existingBars, existingWarehouses, onSave
               className="flex items-center gap-1.5 text-xs font-medium text-neutral-500 hover:text-neutral-900 transition-colors">
               <Plus className="w-3.5 h-3.5" /> Adicionar armazém
             </button>
+          </div>
+        )}
+      </div>
+
+      {/* ── 5: Pessoas ── */}
+      <div className="bg-white rounded-2xl border border-neutral-100 shadow-sm overflow-hidden border-l-4 border-l-violet-400">
+        <SectionBtn sKey="pessoas"
+          title="Pessoas"
+          subtitle={pessoasComplete
+            ? `${allAssignedIds.length} pessoa${allAssignedIds.length !== 1 ? "s" : ""} atribuída${allAssignedIds.length !== 1 ? "s" : ""}`
+            : namedBars.length > 0 ? "Atribui responsáveis e equipa a cada bar" : "Cria bares primeiro"}
+          Icon={Users} borderCls="" iconCls="text-violet-500" bgCls="bg-violet-50" />
+        {open.pessoas && (
+          <div className="border-t border-neutral-100 p-5 space-y-4">
+            {namedBars.length === 0 ? (
+              <div className="text-sm text-neutral-400 text-center py-2">Define os bares na secção anterior primeiro.</div>
+            ) : (
+              namedBars.map(bar => {
+                const assigned = allUsers.filter(u => bar.assignedUserIds.includes(u.id));
+                const available = allUsers.filter(u => !bar.assignedUserIds.includes(u.id));
+                return (
+                  <div key={bar._key} className="border border-neutral-200 rounded-xl overflow-hidden">
+                    <div className="px-4 py-2.5 bg-neutral-50 border-b border-neutral-100">
+                      <span className="text-xs font-semibold uppercase tracking-widest text-neutral-500">{bar.name}</span>
+                    </div>
+                    <div className="p-4 space-y-3">
+                      {/* Responsável */}
+                      <div>
+                        <label className="block text-xs text-neutral-400 mb-1.5">Responsável</label>
+                        <input type="text" placeholder="Nome do responsável" value={bar.leader_name}
+                          onChange={e => updateBar(bar._key, "leader_name", e.target.value)}
+                          className="w-full border border-neutral-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-neutral-900" />
+                      </div>
+                      {/* Equipa */}
+                      <div>
+                        <label className="block text-xs text-neutral-400 mb-1.5">Equipa</label>
+                        {assigned.length > 0 && (
+                          <div className="flex flex-wrap gap-1.5 mb-2">
+                            {assigned.map(u => (
+                              <Chip key={u.id}
+                                label={`${u.name} · ${ROLE_LABELS[u.role] || u.role}`}
+                                color="purple"
+                                onRemove={() => unassignUser(bar._key, u.id)} />
+                            ))}
+                          </div>
+                        )}
+                        {available.length > 0 && (
+                          <select value=""
+                            onChange={e => { if (e.target.value) { assignUser(bar._key, e.target.value); e.target.value = ""; } }}
+                            className="w-full border border-neutral-200 rounded-xl px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-neutral-900">
+                            <option value="">+ Adicionar pessoa...</option>
+                            {available.map(u => (
+                              <option key={u.id} value={u.id}>{u.name} · {ROLE_LABELS[u.role] || u.role}</option>
+                            ))}
+                          </select>
+                        )}
+                        {allUsers.length === 0 && (
+                          <div className="text-xs text-neutral-400">Cria utilizadores no separador Utilizadores primeiro.</div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })
+            )}
           </div>
         )}
       </div>
@@ -480,7 +562,7 @@ function UserCard({ appUser, bars, festivals, onUpdate, onDelete }) {
 }
 
 // ── Festival item ─────────────────────────────────────────────────────────────
-function FestivalItem({ festival, allProducts, existingBars, existingWarehouses, onUpdate, onDelete, onClose, onReopen }) {
+function FestivalItem({ festival, allProducts, allUsers, existingBars, existingWarehouses, onUpdate, onDelete, onClose, onReopen }) {
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
 
@@ -533,6 +615,7 @@ function FestivalItem({ festival, allProducts, existingBars, existingWarehouses,
         <div className="border-t border-neutral-100 p-4 bg-neutral-50">
           <FestivalFormNew
             allProducts={allProducts}
+            allUsers={allUsers}
             existingBars={existingBars}
             existingWarehouses={existingWarehouses}
             initial={festival}
@@ -630,6 +713,11 @@ export default function GlobalSettings() {
     await refreshWarehouses();
   };
 
+  // Assign users to a bar and update their bar_id
+  const syncBarUsers = async (barId, assignedUserIds) => {
+    await Promise.all(assignedUserIds.map(uid => db.AppUser.update(uid, { bar_id: barId })));
+  };
+
   // ── Festival CRUD ─────────────────────────────────────────────────────────
   const handleCreateFestival = async (festivalData, barsData, warehousesData) => {
     setSavingFestival(true);
@@ -639,8 +727,17 @@ export default function GlobalSettings() {
     if (created?.id) {
       const barIds = [];
       for (const bar of barsData) {
-        const b = await db.Bar.create({ name: bar.name, location: bar.location || "", festival_id: created.id, is_active: true });
-        if (b?.id) barIds.push(b.id);
+        const b = await db.Bar.create({
+          name: bar.name,
+          location: bar.location || "",
+          leader_name: bar.leader_name || "",
+          festival_id: created.id,
+          is_active: true,
+        });
+        if (b?.id) {
+          barIds.push(b.id);
+          if (bar.assignedUserIds?.length) await syncBarUsers(b.id, bar.assignedUserIds);
+        }
       }
       if (barIds.length > 0) await db.Festival.update(created.id, { bar_ids: barIds });
       for (const wh of warehousesData) {
@@ -648,6 +745,7 @@ export default function GlobalSettings() {
       }
       await refreshBars();
       await refreshWarehouses();
+      await refreshUsers();
     }
     await refreshFestivals();
     setSavingFestival(false);
@@ -661,15 +759,20 @@ export default function GlobalSettings() {
 
     for (const bar of barsData) {
       if (bar.id) {
-        await db.Bar.update(bar.id, { name: bar.name, location: bar.location || "", festival_id: id });
+        await db.Bar.update(bar.id, { name: bar.name, location: bar.location || "", leader_name: bar.leader_name || "", festival_id: id });
         barIds.push(bar.id);
       } else {
-        const b = await db.Bar.create({ name: bar.name, location: bar.location || "", festival_id: id, is_active: true });
+        const b = await db.Bar.create({ name: bar.name, location: bar.location || "", leader_name: bar.leader_name || "", festival_id: id, is_active: true });
         if (b?.id) barIds.push(b.id);
       }
     }
 
-    // Delete bars removed from the festival
+    // Sync user assignments per bar
+    for (const bar of barsData) {
+      const barId = bar.id || barIds[barsData.indexOf(bar)];
+      if (barId && bar.assignedUserIds?.length) await syncBarUsers(barId, bar.assignedUserIds);
+    }
+
     for (const eb of existingFestBars) {
       if (!barIds.includes(eb.id)) await db.Bar.delete(eb.id);
     }
@@ -677,6 +780,7 @@ export default function GlobalSettings() {
     await db.Festival.update(id, { ...festivalData, bar_ids: barIds });
     await syncFestivalWarehouses(id, warehousesData);
     await refreshBars();
+    await refreshUsers();
     await refreshFestivals(id);
   };
 
@@ -820,6 +924,7 @@ export default function GlobalSettings() {
                     )}
                     <FestivalFormNew
                       allProducts={products}
+                      allUsers={users}
                       existingBars={[]}
                       existingWarehouses={[]}
                       saving={savingFestival}
@@ -833,10 +938,16 @@ export default function GlobalSettings() {
                   const festBars = bars.filter(b => b.festival_id === f.id).length > 0
                     ? bars.filter(b => b.festival_id === f.id)
                     : bars.filter(b => (f.bar_ids || []).includes(b.id));
+                  // Enrich bars with their assigned users
+                  const enrichedBars = festBars.map(b => ({
+                    ...b,
+                    assignedUserIds: users.filter(u => u.bar_id === b.id).map(u => u.id),
+                  }));
                   return (
                     <FestivalItem key={f.id} festival={f}
                       allProducts={products}
-                      existingBars={festBars}
+                      allUsers={users}
+                      existingBars={enrichedBars}
                       existingWarehouses={warehouses.filter(w => w.festival_id === f.id)}
                       onUpdate={handleUpdateFestival}
                       onDelete={handleDeleteFestival}
