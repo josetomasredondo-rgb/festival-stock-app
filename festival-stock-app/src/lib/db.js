@@ -121,9 +121,11 @@ export const db = {
   Movement: createEntity('movements'),
 }
 
-// Bars are now global — get festival bars via bar_ids array
+// Get festival bars: prefer festival_id (new), fall back to bar_ids array (legacy)
 export async function getFestivalBars(festival) {
   if (!festival) return []
+  const byFestId = await db.Bar.filterByFestival(festival.id)
+  if (byFestId.length > 0) return byFestId
   const ids = festival.bar_ids || []
   if (ids.length === 0) return []
   return db.Bar.filterByIds(ids)

@@ -1,6 +1,9 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { ChevronLeft, Plus, Trash2, Pencil, Check, X, Loader2 } from "lucide-react";
+import {
+  ChevronLeft, ChevronDown, Plus, Trash2, Pencil, Check, X, Loader2,
+  Calendar, Building2, Package, Archive
+} from "lucide-react";
 import db from "../lib/db";
 import { useAuth, ROLE_LABELS } from "../lib/AuthContext";
 
@@ -18,233 +21,305 @@ function Chip({ label, color, onRemove }) {
       {label}
       {onRemove && (
         <button type="button" onClick={onRemove}
-          className="ml-0.5 opacity-60 hover:opacity-100 font-bold leading-none">
-          ×
-        </button>
+          className="ml-0.5 opacity-60 hover:opacity-100 font-bold leading-none">×</button>
       )}
     </span>
   );
 }
 
-// ── MultiSelect ───────────────────────────────────────────────────────────────
-function MultiSelect({ label, options, selectedIds, onAdd, onRemove, color, getLabel }) {
-  return (
-    <div>
-      <label className="block text-xs font-semibold uppercase tracking-widest text-neutral-400 mb-2">{label}</label>
-      {selectedIds.length > 0 && (
-        <div className="flex flex-wrap gap-1.5 mb-2">
-          {selectedIds.map(id => {
-            const opt = options.find(o => o.id === id);
-            return opt ? <Chip key={id} label={getLabel(opt)} color={color} onRemove={() => onRemove(id)} /> : null;
-          })}
-        </div>
-      )}
-      <select value=""
-        onChange={e => { if (e.target.value) { onAdd(e.target.value); e.target.value = ""; } }}
-        className="w-full border border-neutral-200 rounded-xl px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-neutral-900">
-        <option value="">+ Adicionar {label.toLowerCase()}...</option>
-        {options.filter(o => !selectedIds.includes(o.id)).map(o => (
-          <option key={o.id} value={o.id}>{getLabel(o)}</option>
-        ))}
-      </select>
-    </div>
+// ── Festival form — collapsible sections ──────────────────────────────────────
+function FestivalFormNew({ allProducts, existingBars, existingWarehouses, onSave, onCancel, saving, initial, suggestedName }) {
+  const [open, setOpen] = useState({ info: true, bares: true, produtos: true, armazem: true });
+  const toggle = (k) => setOpen(prev => ({ ...prev, [k]: !prev[k] }));
+
+  // ── Info state ──
+  const [name, setName] = useState(initial?.name || suggestedName || "");
+  const [startDate, setStartDate] = useState(initial?.start_date || "");
+  const [endDate, setEndDate] = useState(initial?.end_date || "");
+  const [numDays, setNumDays] = useState(initial?.num_days || 1);
+  const [dayNames, setDayNames] = useState(() =>
+    initial?.day_names?.length
+      ? initial.day_names
+      : Array.from({ length: initial?.num_days || 1 }, (_, i) => `Dia ${i + 1}`)
   );
-}
-
-// ── Festival form (create + edit) ─────────────────────────────────────────────
-function FestivalForm({ bars, products, users, existingWarehouses, onSave, onCancel, initial, saving, suggestedName }) {
-  const blank = { name: suggestedName || "", start_date: "", end_date: "", num_days: 1, day_names: ["Dia 1"], bar_ids: [], product_ids: [], user_ids: [], expected_attendance: 0 };
-  const [form, setForm] = useState(() => {
-    if (!initial) return blank;
-    return {
-      ...blank,
-      ...initial,
-      bar_ids: initial.bar_ids || [],
-      product_ids: initial.product_ids || [],
-      user_ids: initial.user_ids || [],
-      expected_attendance: initial.expected_attendance || 0,
-      day_names: initial.day_names?.length
-        ? initial.day_names
-        : Array.from({ length: initial.num_days || 1 }, (_, i) => `Dia ${i + 1}`),
-    };
-  });
-
-  const [formWarehouses, setFormWarehouses] = useState(() => {
-    if (existingWarehouses?.length) {
-      return existingWarehouses.map(w => ({ id: w.id, name: w.name, initial_stock: w.initial_stock || [] }));
-    }
-    return [{ id: undefined, name: "Armazém Central", initial_stock: [] }];
-  });
+  const [attendance, setAttendance] = useState(initial?.expected_attendance || 0);
 
   const handleNumDays = (n) => {
     const num = Math.max(1, Math.min(15, Number(n) || 1));
-    setForm(f => ({
-      ...f, num_days: num,
-      day_names: Array.from({ length: num }, (_, i) => f.day_names[i] || `Dia ${i + 1}`),
+    setNumDays(num);
+    setDayNames(prev => Array.from({ length: num }, (_, i) => prev[i] || `Dia ${i + 1}`));
+  };
+
+  // ── Bars state ──
+  const [formBars, setFormBars] = useState(() =>
+    existingBars?.length
+      ? existingBars.map(b => ({ _key: b.id, id: b.id, name: b.name, location: b.location || "" }))
+      : [{ _key: "new_0", id: null, name: "", location: "" }]
+  );
+
+  const addBar = () => setFormBars(prev => [...prev, { _key: `new_${Date.now()}`, id: null, name: "", location: "" }]);
+  const updateBar = (_key, field, val) => setFormBars(prev => prev.map(b => b._key === _key ? { ...b, [field]: val } : b));
+  const removeBar = (_key) => setFormBars(prev => prev.filter(b => b._key !== _key));
+
+  // ── Products state ──
+  const [productIds, setProductIds] = useState(initial?.product_ids || []);
+  const toggleProduct = (id) => setProductIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
+  const selectedProducts = allProducts.filter(p => productIds.includes(p.id));
+
+  // ── Warehouse state ──
+  const [warehouses, setWarehouses] = useState(() =>
+    existingWarehouses?.length
+      ? existingWarehouses.map(w => ({ id: w.id, name: w.name, initial_stock: w.initial_stock || [] }))
+      : [{ id: null, name: "Armazém Central", initial_stock: [] }]
+  );
+
+  const updateWarehouseStock = (wi, product, qty) => {
+    setWarehouses(prev => prev.map((wh, i) => {
+      if (i !== wi) return wh;
+      const stock = wh.initial_stock || [];
+      const exists = stock.find(s => s.product_id === product.id);
+      return {
+        ...wh,
+        initial_stock: exists
+          ? stock.map(s => s.product_id === product.id ? { ...s, quantity: Number(qty) || 0 } : s)
+          : [...stock, { product_id: product.id, product_name: product.name, unit: product.unit || "units", quantity: Number(qty) || 0 }],
+      };
     }));
   };
 
-  const addId = (field, id) => setForm(f => ({ ...f, [field]: [...(f[field] || []), id] }));
-  const removeId = (field, id) => setForm(f => ({ ...f, [field]: (f[field] || []).filter(x => x !== id) }));
+  // ── Completion ──
+  const infoComplete = !!name.trim() && dayNames.some(d => d.trim());
+  const baresComplete = formBars.some(b => b.name.trim());
+  const produtosComplete = productIds.length > 0;
+  const armazémComplete = warehouses.some(w => (w.initial_stock || []).some(s => (s.quantity || 0) > 0));
+  const dots = [infoComplete, baresComplete, produtosComplete, armazémComplete];
 
-  const updateWarehouseStock = (whIndex, product, qty) => {
-    setFormWarehouses(prev => prev.map((wh, wi) => {
-      if (wi !== whIndex) return wh;
-      const existing = (wh.initial_stock || []).find(s => s.product_id === product.id);
-      let newStock;
-      if (existing) {
-        newStock = (wh.initial_stock || []).map(s =>
-          s.product_id === product.id ? { ...s, quantity: Number(qty) || 0 } : s
-        );
-      } else {
-        newStock = [
-          ...(wh.initial_stock || []),
-          { product_id: product.id, product_name: product.name, unit: product.unit || "units", quantity: Number(qty) || 0 }
-        ];
-      }
-      return { ...wh, initial_stock: newStock };
-    }));
+  const handleSubmit = () => {
+    if (!name.trim()) return;
+    onSave(
+      {
+        name: name.trim(), start_date: startDate, end_date: endDate,
+        num_days: numDays, day_names: dayNames,
+        expected_attendance: Number(attendance) || 0,
+        product_ids: productIds,
+        user_ids: initial?.user_ids || [],
+      },
+      formBars.filter(b => b.name.trim()),
+      warehouses
+    );
   };
 
-  const selectedProducts = products.filter(p => form.product_ids.includes(p.id));
+  // ── Section header helper ──
+  const SectionBtn = ({ sKey, title, subtitle, Icon, borderCls, iconCls, bgCls }) => (
+    <button type="button" onClick={() => toggle(sKey)}
+      className="w-full flex items-center gap-4 p-5 text-left hover:bg-neutral-50 transition-colors">
+      <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${bgCls}`}>
+        <Icon className={`w-[18px] h-[18px] ${iconCls}`} />
+      </div>
+      <div className="flex-1 min-w-0">
+        <div className="font-semibold text-neutral-900">{title}</div>
+        {subtitle && <div className="text-xs text-neutral-400 mt-0.5 truncate">{subtitle}</div>}
+      </div>
+      <ChevronDown className={`w-4 h-4 text-neutral-400 transition-transform shrink-0 ${open[sKey] ? "rotate-180" : ""}`} />
+    </button>
+  );
+
+  const namedBars = formBars.filter(b => b.name.trim()).length;
+  const totalStock = warehouses.reduce((s, w) => s + (w.initial_stock || []).reduce((s2, i) => s2 + (i.quantity || 0), 0), 0);
 
   return (
-    <div className="space-y-4">
-      <input type="text" placeholder="Nome do festival *" value={form.name}
-        onChange={e => setForm(f => ({ ...f, name: e.target.value }))} autoFocus
-        className="w-full border border-neutral-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-neutral-900" />
-
-      <div className="grid grid-cols-2 gap-3">
-        <div>
-          <label className="block text-xs text-neutral-400 mb-1">Data início</label>
-          <input type="date" value={form.start_date}
-            onChange={e => setForm(f => ({ ...f, start_date: e.target.value }))}
-            className="w-full border border-neutral-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-neutral-900" />
-        </div>
-        <div>
-          <label className="block text-xs text-neutral-400 mb-1">Data fim</label>
-          <input type="date" value={form.end_date}
-            onChange={e => setForm(f => ({ ...f, end_date: e.target.value }))}
-            className="w-full border border-neutral-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-neutral-900" />
-        </div>
-      </div>
-
-      <div className="grid grid-cols-2 gap-3">
-        <div>
-          <label className="block text-xs text-neutral-400 mb-1">Nº de dias</label>
-          <input type="number" min={1} max={15} value={form.num_days}
-            onChange={e => handleNumDays(e.target.value)}
-            className="w-full border border-neutral-200 rounded-xl px-3 py-2.5 text-sm text-center focus:outline-none focus:ring-2 focus:ring-neutral-900" />
-        </div>
-        <div>
-          <label className="block text-xs text-neutral-400 mb-1">Previsão de pessoas</label>
-          <input type="number" min={0} value={form.expected_attendance}
-            onChange={e => setForm(f => ({ ...f, expected_attendance: Number(e.target.value) || 0 }))}
-            className="w-full border border-neutral-200 rounded-xl px-3 py-2.5 text-sm text-center focus:outline-none focus:ring-2 focus:ring-neutral-900" />
-        </div>
-      </div>
-
-      <div className="space-y-2">
-        <label className="block text-xs font-semibold uppercase tracking-widest text-neutral-400">Nomes dos dias</label>
-        {form.day_names.map((name, i) => (
-          <div key={i} className="flex items-center gap-3">
-            <span className="text-xs text-neutral-400 w-12 shrink-0">Dia {i + 1}</span>
-            <input type="text" value={name}
-              onChange={e => {
-                const day_names = [...form.day_names];
-                day_names[i] = e.target.value;
-                setForm(f => ({ ...f, day_names }));
-              }}
-              placeholder={`Dia ${i + 1}`}
-              className="flex-1 border border-neutral-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-neutral-900" />
-          </div>
+    <div className="space-y-3">
+      {/* Progress bar */}
+      <div className="flex items-center gap-1.5 px-1 pb-1">
+        {dots.map((done, i) => (
+          <div key={i} className={`h-1.5 flex-1 rounded-full transition-colors ${done ? "bg-green-400" : "bg-neutral-200"}`} />
         ))}
       </div>
 
-      <MultiSelect label="Bares" options={bars} selectedIds={form.bar_ids}
-        onAdd={id => addId("bar_ids", id)} onRemove={id => removeId("bar_ids", id)}
-        color="teal" getLabel={b => b.name} />
+      {/* ── Section 1: Info ── */}
+      <div className="bg-white rounded-2xl border border-neutral-100 shadow-sm overflow-hidden border-l-4 border-l-orange-400">
+        <SectionBtn sKey="info"
+          title="Informação Geral"
+          subtitle={name ? `${name}${startDate ? ` · ${startDate}` : ""}${numDays > 1 ? ` · ${numDays} dias` : ""}` : "Nome, datas e configuração"}
+          Icon={Calendar} borderCls="border-l-orange-400" iconCls="text-orange-500" bgCls="bg-orange-50" />
+        {open.info && (
+          <div className="border-t border-neutral-100 p-5 space-y-4">
+            <input type="text" placeholder="Nome do festival *" value={name}
+              onChange={e => setName(e.target.value)} autoFocus
+              className="w-full border border-neutral-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-neutral-900" />
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs text-neutral-400 mb-1">Data início</label>
+                <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)}
+                  className="w-full border border-neutral-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-neutral-900" />
+              </div>
+              <div>
+                <label className="block text-xs text-neutral-400 mb-1">Data fim</label>
+                <input type="date" value={endDate} onChange={e => setEndDate(e.target.value)}
+                  className="w-full border border-neutral-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-neutral-900" />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs text-neutral-400 mb-1">Nº de dias</label>
+                <input type="number" min={1} max={15} value={numDays} onChange={e => handleNumDays(e.target.value)}
+                  className="w-full border border-neutral-200 rounded-xl px-3 py-2.5 text-sm text-center focus:outline-none focus:ring-2 focus:ring-neutral-900" />
+              </div>
+              <div>
+                <label className="block text-xs text-neutral-400 mb-1">Pessoas esperadas</label>
+                <input type="number" min={0} value={attendance} onChange={e => setAttendance(e.target.value)}
+                  className="w-full border border-neutral-200 rounded-xl px-3 py-2.5 text-sm text-center focus:outline-none focus:ring-2 focus:ring-neutral-900" />
+              </div>
+            </div>
+            <div className="space-y-2">
+              <label className="block text-xs font-semibold uppercase tracking-widest text-neutral-400">Nomes dos dias</label>
+              {dayNames.map((dn, i) => (
+                <div key={i} className="flex items-center gap-3">
+                  <span className="text-xs text-neutral-400 w-12 shrink-0">Dia {i + 1}</span>
+                  <input type="text" value={dn} placeholder={`Dia ${i + 1}`}
+                    onChange={e => { const next = [...dayNames]; next[i] = e.target.value; setDayNames(next); }}
+                    className="flex-1 border border-neutral-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-neutral-900" />
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
 
-      <MultiSelect label="Produtos" options={products} selectedIds={form.product_ids}
-        onAdd={id => addId("product_ids", id)} onRemove={id => removeId("product_ids", id)}
-        color="amber" getLabel={p => p.name} />
-
-      <MultiSelect label="Utilizadores" options={users} selectedIds={form.user_ids}
-        onAdd={id => addId("user_ids", id)} onRemove={id => removeId("user_ids", id)}
-        color="purple" getLabel={u => `${u.name} · ${ROLE_LABELS[u.role] || u.role}`} />
-
-      {/* ── Armazéns ── */}
-      <div className="space-y-3">
-        <div className="flex items-center justify-between">
-          <label className="block text-xs font-semibold uppercase tracking-widest text-neutral-400">Armazéns</label>
-          <button type="button"
-            onClick={() => setFormWarehouses(p => [...p, { id: undefined, name: "", initial_stock: [] }])}
-            className="text-xs font-medium text-neutral-500 hover:text-neutral-900 flex items-center gap-1 transition-colors">
-            <Plus className="w-3.5 h-3.5" /> Adicionar
-          </button>
-        </div>
-        {formWarehouses.map((wh, wi) => (
-          <div key={wi} className="border border-neutral-200 rounded-xl p-4 space-y-3 bg-neutral-50">
-            <div className="flex items-center gap-3">
-              <input type="text" value={wh.name}
-                onChange={e => setFormWarehouses(p => p.map((w, i) => i === wi ? { ...w, name: e.target.value } : w))}
-                placeholder="Nome do armazém"
-                className="flex-1 border border-neutral-200 rounded-xl px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-neutral-900" />
-              {formWarehouses.length > 1 && (
-                <button type="button"
-                  onClick={() => setFormWarehouses(p => p.filter((_, i) => i !== wi))}
-                  className="p-1.5 text-neutral-400 hover:text-red-500 transition-colors">
+      {/* ── Section 2: Bares ── */}
+      <div className="bg-white rounded-2xl border border-neutral-100 shadow-sm overflow-hidden border-l-4 border-l-blue-400">
+        <SectionBtn sKey="bares"
+          title="Bares"
+          subtitle={namedBars > 0 ? `${namedBars} bar${namedBars !== 1 ? "es" : ""} adicionado${namedBars !== 1 ? "s" : ""}` : "Cria os bares do festival"}
+          Icon={Building2} borderCls="border-l-blue-400" iconCls="text-blue-500" bgCls="bg-blue-50" />
+        {open.bares && (
+          <div className="border-t border-neutral-100 p-5 space-y-2">
+            {formBars.map(bar => (
+              <div key={bar._key} className="flex items-center gap-2">
+                <input type="text" placeholder="Nome do bar *" value={bar.name}
+                  onChange={e => updateBar(bar._key, "name", e.target.value)}
+                  className="flex-1 border border-neutral-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-neutral-900" />
+                <input type="text" placeholder="Localização (opcional)" value={bar.location}
+                  onChange={e => updateBar(bar._key, "location", e.target.value)}
+                  className="flex-1 border border-neutral-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-neutral-900" />
+                <button type="button" onClick={() => removeBar(bar._key)}
+                  className="p-2 text-neutral-300 hover:text-red-500 transition-colors shrink-0">
                   <Trash2 className="w-4 h-4" />
                 </button>
-              )}
-            </div>
-            {selectedProducts.length > 0 && (
-              <div>
-                <div className="text-xs text-neutral-400 mb-2">Stock inicial por produto:</div>
-                <div className="space-y-1.5">
-                  {selectedProducts.map(p => {
-                    const qty = (wh.initial_stock || []).find(s => s.product_id === p.id)?.quantity ?? 0;
-                    return (
-                      <div key={p.id} className="flex items-center gap-3">
-                        <span className="text-sm text-neutral-700 flex-1">{p.name}</span>
-                        <input type="number" min="0" value={qty}
-                          onChange={e => updateWarehouseStock(wi, p, e.target.value)}
-                          className="w-20 border border-neutral-200 rounded-xl px-2 py-1.5 text-sm text-center bg-white focus:outline-none focus:ring-2 focus:ring-neutral-900" />
-                        <span className="text-xs text-neutral-400 w-12">{p.unit || "units"}</span>
-                      </div>
-                    );
-                  })}
-                </div>
               </div>
-            )}
-            {selectedProducts.length === 0 && (
-              <div className="text-xs text-neutral-400">Adiciona produtos ao festival para configurar o stock inicial.</div>
-            )}
+            ))}
+            <button type="button" onClick={addBar}
+              className="w-full flex items-center justify-center gap-2 py-2.5 border-2 border-dashed border-neutral-200 rounded-xl text-sm font-medium text-neutral-400 hover:border-neutral-400 hover:text-neutral-600 transition-all mt-1">
+              <Plus className="w-4 h-4" /> Adicionar bar
+            </button>
           </div>
-        ))}
+        )}
       </div>
 
-      <div className="flex gap-2 pt-1">
+      {/* ── Section 3: Produtos ── */}
+      <div className="bg-white rounded-2xl border border-neutral-100 shadow-sm overflow-hidden border-l-4 border-l-amber-400">
+        <SectionBtn sKey="produtos"
+          title="Produtos"
+          subtitle={productIds.length > 0 ? `${productIds.length} produto${productIds.length !== 1 ? "s" : ""} selecionado${productIds.length !== 1 ? "s" : ""}` : "Seleciona os produtos do festival"}
+          Icon={Package} borderCls="border-l-amber-400" iconCls="text-amber-500" bgCls="bg-amber-50" />
+        {open.produtos && (
+          <div className="border-t border-neutral-100 p-5">
+            {selectedProducts.length > 0 && (
+              <div className="flex flex-wrap gap-1.5 mb-3">
+                {selectedProducts.map(p => (
+                  <Chip key={p.id} label={p.name} color="amber" onRemove={() => toggleProduct(p.id)} />
+                ))}
+              </div>
+            )}
+            <select value=""
+              onChange={e => { if (e.target.value) { toggleProduct(e.target.value); e.target.value = ""; } }}
+              className="w-full border border-neutral-200 rounded-xl px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-neutral-900">
+              <option value="">+ Adicionar produto...</option>
+              {allProducts.filter(p => !productIds.includes(p.id)).map(p => (
+                <option key={p.id} value={p.id}>{p.name} ({p.unit || "units"})</option>
+              ))}
+            </select>
+            {allProducts.length === 0 && (
+              <div className="text-xs text-neutral-400 mt-2">Cria produtos no separador Produtos primeiro.</div>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* ── Section 4: Armazém ── */}
+      <div className="bg-white rounded-2xl border border-neutral-100 shadow-sm overflow-hidden border-l-4 border-l-teal-400">
+        <SectionBtn sKey="armazem"
+          title="Armazém"
+          subtitle={totalStock > 0
+            ? `${warehouses.length} armazém${warehouses.length !== 1 ? "éns" : ""} · ${totalStock} unidades`
+            : selectedProducts.length > 0 ? "Define o stock inicial" : "Adiciona produtos primeiro"}
+          Icon={Archive} borderCls="border-l-teal-400" iconCls="text-teal-500" bgCls="bg-teal-50" />
+        {open.armazem && (
+          <div className="border-t border-neutral-100 p-5 space-y-4">
+            {warehouses.map((wh, wi) => (
+              <div key={wi} className="border border-neutral-200 rounded-xl p-4 space-y-3 bg-neutral-50">
+                <div className="flex items-center gap-3">
+                  <input type="text" value={wh.name} placeholder="Nome do armazém"
+                    onChange={e => setWarehouses(prev => prev.map((w, i) => i === wi ? { ...w, name: e.target.value } : w))}
+                    className="flex-1 border border-neutral-200 rounded-xl px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-neutral-900" />
+                  {warehouses.length > 1 && (
+                    <button type="button" onClick={() => setWarehouses(prev => prev.filter((_, i) => i !== wi))}
+                      className="p-1.5 text-neutral-400 hover:text-red-500 transition-colors">
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  )}
+                </div>
+                {selectedProducts.length > 0 ? (
+                  <div className="space-y-2">
+                    <div className="text-xs text-neutral-400">Stock inicial por produto:</div>
+                    {selectedProducts.map(p => {
+                      const qty = (wh.initial_stock || []).find(s => s.product_id === p.id)?.quantity ?? 0;
+                      return (
+                        <div key={p.id} className="flex items-center gap-3">
+                          <span className="text-sm text-neutral-700 flex-1">{p.name}</span>
+                          <input type="number" min="0" value={qty}
+                            onChange={e => updateWarehouseStock(wi, p, e.target.value)}
+                            className="w-20 border border-neutral-200 rounded-xl px-2 py-1.5 text-sm text-center bg-white focus:outline-none focus:ring-2 focus:ring-neutral-900" />
+                          <span className="text-xs text-neutral-400 w-12">{p.unit || "units"}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <div className="text-xs text-neutral-400">Adiciona produtos ao festival para configurar o stock inicial.</div>
+                )}
+              </div>
+            ))}
+            <button type="button"
+              onClick={() => setWarehouses(prev => [...prev, { id: null, name: "", initial_stock: [] }])}
+              className="flex items-center gap-1.5 text-xs font-medium text-neutral-500 hover:text-neutral-900 transition-colors">
+              <Plus className="w-3.5 h-3.5" /> Adicionar armazém
+            </button>
+          </div>
+        )}
+      </div>
+
+      {/* Actions */}
+      <div className="flex gap-2 pt-2">
         <button type="button" onClick={onCancel}
-          className="flex-1 py-2.5 border border-neutral-200 rounded-xl text-sm font-medium text-neutral-600 hover:bg-neutral-50">
+          className="px-5 py-2.5 border border-neutral-200 rounded-xl text-sm font-medium text-neutral-600 hover:bg-neutral-50">
           Cancelar
         </button>
-        <button type="button" onClick={() => onSave(form, formWarehouses)}
-          disabled={saving || !form.name.trim()}
+        <button type="button" onClick={handleSubmit}
+          disabled={saving || !name.trim()}
           className="flex-1 py-2.5 bg-neutral-900 text-white rounded-xl text-sm font-semibold hover:bg-neutral-700 disabled:opacity-40 flex items-center justify-center gap-2">
           {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
-          Guardar
+          {initial ? "Guardar alterações" : "Criar festival"}
         </button>
       </div>
     </div>
   );
 }
 
-// ── Bar card ─────────────────────────────────────────────────────────────────
+// ── Bar card (global bars tab) ────────────────────────────────────────────────
 function BarCard({ bar, onUpdate, onDelete }) {
   const [editing, setEditing] = useState(false);
   const [form, setForm] = useState({ name: bar.name, leader_name: bar.leader_name || "", leader_email: bar.leader_email || "", location: bar.location || "" });
-
   const save = async () => { await onUpdate(bar.id, form); setEditing(false); };
 
   if (editing) return (
@@ -282,7 +357,6 @@ function BarCard({ bar, onUpdate, onDelete }) {
 function ProductCard({ product, onUpdate, onDelete }) {
   const [editing, setEditing] = useState(false);
   const [form, setForm] = useState({ name: product.name, unit: product.unit || "units", category: product.category || "other", selling_price: product.selling_price || "" });
-
   const save = async () => { await onUpdate(product.id, form); setEditing(false); };
 
   if (editing) return (
@@ -331,9 +405,7 @@ function UserCard({ appUser, bars, festivals, onUpdate, onDelete }) {
   };
 
   const assignedBar = bars.find(b => b.id === appUser.bar_id);
-  const currentFestivalNames = festivals
-    .filter(f => (f.user_ids || []).includes(appUser.id))
-    .map(f => f.name);
+  const currentFestivalNames = festivals.filter(f => (f.user_ids || []).includes(appUser.id)).map(f => f.name);
 
   if (editing) return (
     <div className="bg-white rounded-2xl border border-neutral-200 p-4 space-y-3">
@@ -395,7 +467,7 @@ function UserCard({ appUser, bars, festivals, onUpdate, onDelete }) {
         {assignedBar && <div className="text-xs text-neutral-400 mt-0.5">Bar: {assignedBar.name}</div>}
         {currentFestivalNames.length > 0 && (
           <div className="flex flex-wrap gap-1 mt-1">
-            {currentFestivalNames.map(name => <Chip key={name} label={name} color="teal" />)}
+            {currentFestivalNames.map(n => <Chip key={n} label={n} color="teal" />)}
           </div>
         )}
       </div>
@@ -408,20 +480,16 @@ function UserCard({ appUser, bars, festivals, onUpdate, onDelete }) {
 }
 
 // ── Festival item ─────────────────────────────────────────────────────────────
-function FestivalItem({ festival, bars, products, users, existingWarehouses, onUpdate, onDelete, onClose, onReopen }) {
+function FestivalItem({ festival, allProducts, existingBars, existingWarehouses, onUpdate, onDelete, onClose, onReopen }) {
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
 
-  const handleSave = async (form, formWarehouses) => {
+  const handleSave = async (festivalData, barsData, warehousesData) => {
     setSaving(true);
-    await onUpdate(festival.id, form, formWarehouses);
+    await onUpdate(festival.id, festivalData, barsData, warehousesData);
     setSaving(false);
     setEditing(false);
   };
-
-  const assignedBars = bars.filter(b => (festival.bar_ids || []).includes(b.id));
-  const assignedProducts = products.filter(p => (festival.product_ids || []).includes(p.id));
-  const assignedUsers = users.filter(u => (festival.user_ids || []).includes(u.id));
 
   return (
     <div className="bg-white rounded-2xl border border-neutral-100 shadow-sm overflow-hidden">
@@ -434,17 +502,15 @@ function FestivalItem({ festival, bars, products, users, existingWarehouses, onU
                 ? <span className="text-xs bg-red-100 text-red-600 px-2 py-0.5 rounded-full">Fechado</span>
                 : <span className="text-xs bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full">Ativo</span>}
             </div>
-            {festival.start_date && (
-              <div className="text-xs text-neutral-400 mt-0.5">
-                {festival.start_date}{festival.end_date ? ` → ${festival.end_date}` : ""} · {festival.num_days || 1} dia{(festival.num_days || 1) !== 1 ? "s" : ""}
-                {existingWarehouses?.length > 0 && ` · ${existingWarehouses.length} armazém${existingWarehouses.length !== 1 ? "éns" : ""}`}
-              </div>
-            )}
-            {!editing && (
+            <div className="text-xs text-neutral-400 mt-0.5">
+              {festival.start_date && `${festival.start_date}${festival.end_date ? ` → ${festival.end_date}` : ""} · `}
+              {festival.num_days || 1} dia{(festival.num_days || 1) !== 1 ? "s" : ""}
+              {existingBars?.length > 0 && ` · ${existingBars.length} bar${existingBars.length !== 1 ? "es" : ""}`}
+              {existingWarehouses?.length > 0 && ` · ${existingWarehouses.length} armazém${existingWarehouses.length !== 1 ? "éns" : ""}`}
+            </div>
+            {!editing && existingBars?.length > 0 && (
               <div className="mt-2 flex flex-wrap gap-1">
-                {assignedBars.map(b => <Chip key={b.id} label={b.name} color="teal" />)}
-                {assignedProducts.map(p => <Chip key={p.id} label={p.name} color="amber" />)}
-                {assignedUsers.map(u => <Chip key={u.id} label={u.name} color="purple" />)}
+                {existingBars.map(b => <Chip key={b.id} label={b.name} color="teal" />)}
               </div>
             )}
           </div>
@@ -465,11 +531,15 @@ function FestivalItem({ festival, bars, products, users, existingWarehouses, onU
       </div>
       {editing && (
         <div className="border-t border-neutral-100 p-4 bg-neutral-50">
-          <FestivalForm bars={bars} products={products} users={users}
+          <FestivalFormNew
+            allProducts={allProducts}
+            existingBars={existingBars}
             existingWarehouses={existingWarehouses}
-            initial={festival} saving={saving}
+            initial={festival}
+            saving={saving}
             onSave={handleSave}
-            onCancel={() => setEditing(false)} />
+            onCancel={() => setEditing(false)}
+          />
         </div>
       )}
     </div>
@@ -478,7 +548,7 @@ function FestivalItem({ festival, bars, products, users, existingWarehouses, onU
 
 // ── Main GlobalSettings ───────────────────────────────────────────────────────
 const TABS = ["festivais", "bares", "produtos", "utilizadores"];
-const TAB_LABELS = { festivais: "Festivais", bares: "Bares", produtos: "Produtos", utilizadores: "Utilizadores" };
+const TAB_LABELS = { festivais: "Festivais", bares: "Bares globais", produtos: "Produtos", utilizadores: "Utilizadores" };
 
 export default function GlobalSettings() {
   const { role, currentFestival, setCurrentFestival } = useAuth();
@@ -515,12 +585,9 @@ export default function GlobalSettings() {
     } catch {}
   }, []);
 
-  if (role !== "manager") {
-    navigate("/Dashboard");
-    return null;
-  }
+  if (role !== "manager") { navigate("/Dashboard"); return null; }
 
-  // ── Re-fetch helpers ──────────────────────────────────────────────────────
+  // ── Helpers ───────────────────────────────────────────────────────────────
   const refreshFestivals = async (updatedId) => {
     const fresh = await db.Festival.list();
     setFestivals(fresh);
@@ -535,30 +602,21 @@ export default function GlobalSettings() {
   const refreshUsers     = async () => setUsers(await db.AppUser.list());
   const refreshWarehouses = async () => setWarehouses(await db.Warehouse.list());
 
-  // ── Festival helpers ──────────────────────────────────────────────────────
   const syncUserFestivals = async (userId, newFestivalIds) => {
     const latestFestivals = await db.Festival.list();
-    const prevFestivalIds = latestFestivals.filter(f => (f.user_ids || []).includes(userId)).map(f => f.id);
-    const toAdd    = newFestivalIds.filter(fid => !prevFestivalIds.includes(fid));
-    const toRemove = prevFestivalIds.filter(fid => !newFestivalIds.includes(fid));
-    const updates = [
-      ...toAdd.map(fid => {
-        const f = latestFestivals.find(x => x.id === fid);
-        return f ? db.Festival.update(fid, { user_ids: [...(f.user_ids || []), userId] }) : null;
-      }),
-      ...toRemove.map(fid => {
-        const f = latestFestivals.find(x => x.id === fid);
-        return f ? db.Festival.update(fid, { user_ids: (f.user_ids || []).filter(id => id !== userId) }) : null;
-      }),
-    ].filter(Boolean);
-    await Promise.all(updates);
+    const prevIds = latestFestivals.filter(f => (f.user_ids || []).includes(userId)).map(f => f.id);
+    const toAdd    = newFestivalIds.filter(fid => !prevIds.includes(fid));
+    const toRemove = prevIds.filter(fid => !newFestivalIds.includes(fid));
+    await Promise.all([
+      ...toAdd.map(fid => { const f = latestFestivals.find(x => x.id === fid); return f ? db.Festival.update(fid, { user_ids: [...(f.user_ids || []), userId] }) : null; }),
+      ...toRemove.map(fid => { const f = latestFestivals.find(x => x.id === fid); return f ? db.Festival.update(fid, { user_ids: (f.user_ids || []).filter(id => id !== userId) }) : null; }),
+    ].filter(Boolean));
     await refreshFestivals();
   };
 
   const syncFestivalWarehouses = async (festivalId, formWarehouses) => {
     const existing = warehouses.filter(w => w.festival_id === festivalId);
     const formIds = (formWarehouses || []).map(w => w.id).filter(Boolean);
-
     for (const wh of (formWarehouses || [])) {
       if (wh.id) {
         await db.Warehouse.update(wh.id, { name: wh.name, initial_stock: wh.initial_stock || [] });
@@ -567,53 +625,82 @@ export default function GlobalSettings() {
       }
     }
     for (const ew of existing) {
-      if (!formIds.includes(ew.id)) {
-        await db.Warehouse.delete(ew.id);
-      }
+      if (!formIds.includes(ew.id)) await db.Warehouse.delete(ew.id);
     }
     await refreshWarehouses();
   };
 
-  const handleCreateFestival = async (form, formWarehouses) => {
+  // ── Festival CRUD ─────────────────────────────────────────────────────────
+  const handleCreateFestival = async (festivalData, barsData, warehousesData) => {
     setSavingFestival(true);
-    const { num_days, day_names, bar_ids, product_ids, user_ids, expected_attendance, ...rest } = form;
-    const created = await db.Festival.create({ ...rest, num_days, day_names, bar_ids: bar_ids || [], product_ids: product_ids || [], user_ids: user_ids || [], expected_attendance: expected_attendance || 0, is_active: true, is_closed: false });
+    const created = await db.Festival.create({
+      ...festivalData, bar_ids: [], is_active: true, is_closed: false,
+    });
     if (created?.id) {
-      for (const wh of (formWarehouses || [])) {
+      const barIds = [];
+      for (const bar of barsData) {
+        const b = await db.Bar.create({ name: bar.name, location: bar.location || "", festival_id: created.id, is_active: true });
+        if (b?.id) barIds.push(b.id);
+      }
+      if (barIds.length > 0) await db.Festival.update(created.id, { bar_ids: barIds });
+      for (const wh of warehousesData) {
         await db.Warehouse.create({ festival_id: created.id, name: wh.name || "Armazém Central", initial_stock: wh.initial_stock || [] });
       }
+      await refreshBars();
       await refreshWarehouses();
     }
     await refreshFestivals();
     setSavingFestival(false);
     setCreatingFestival(false);
+    setSmartSuggestions(null);
   };
 
-  const handleUpdateFestival = async (id, form, formWarehouses) => {
-    const { num_days, day_names, bar_ids, product_ids, user_ids, expected_attendance, ...rest } = form;
-    await db.Festival.update(id, { ...rest, num_days, day_names, bar_ids: bar_ids || [], product_ids: product_ids || [], user_ids: user_ids || [], expected_attendance: expected_attendance || 0 });
-    await syncFestivalWarehouses(id, formWarehouses);
+  const handleUpdateFestival = async (id, festivalData, barsData, warehousesData) => {
+    const existingFestBars = bars.filter(b => b.festival_id === id);
+    const barIds = [];
+
+    for (const bar of barsData) {
+      if (bar.id) {
+        await db.Bar.update(bar.id, { name: bar.name, location: bar.location || "", festival_id: id });
+        barIds.push(bar.id);
+      } else {
+        const b = await db.Bar.create({ name: bar.name, location: bar.location || "", festival_id: id, is_active: true });
+        if (b?.id) barIds.push(b.id);
+      }
+    }
+
+    // Delete bars removed from the festival
+    for (const eb of existingFestBars) {
+      if (!barIds.includes(eb.id)) await db.Bar.delete(eb.id);
+    }
+
+    await db.Festival.update(id, { ...festivalData, bar_ids: barIds });
+    await syncFestivalWarehouses(id, warehousesData);
+    await refreshBars();
     await refreshFestivals(id);
   };
 
   const handleDeleteFestival = async (id) => {
     if (!window.confirm("Eliminar este festival? Todos os relatórios e movimentos associados serão eliminados. Esta ação não pode ser desfeita.")) return;
-    const [reports, offered, festWarehouses, festMovements] = await Promise.all([
+    const [reports, offered, festWarehouses, festMovements, festBars] = await Promise.all([
       db.StockReport.filterByFestival(id),
       db.OfferedItems.filterByFestival(id),
       db.Warehouse.filterByFestival(id),
       db.Movement.filterByFestival(id),
+      db.Bar.filterByFestival(id),
     ]);
     await Promise.all([
       ...reports.map(r => db.StockReport.delete(r.id)),
       ...offered.map(r => db.OfferedItems.delete(r.id)),
       ...festWarehouses.map(w => db.Warehouse.delete(w.id)),
       ...festMovements.map(m => db.Movement.delete(m.id)),
+      ...festBars.map(b => db.Bar.delete(b.id)),
     ]);
     const ok = await db.Festival.delete(id);
     if (ok) {
       setFestivals(prev => prev.filter(f => f.id !== id));
       setWarehouses(prev => prev.filter(w => w.festival_id !== id));
+      setBars(prev => prev.filter(b => b.festival_id !== id));
     }
   };
 
@@ -628,7 +715,7 @@ export default function GlobalSettings() {
     await refreshFestivals(id);
   };
 
-  // ── Bars ──────────────────────────────────────────────────────────────────
+  // ── Global bars CRUD ──────────────────────────────────────────────────────
   const addBar = async () => {
     if (!newBar.name.trim()) return;
     await db.Bar.create({ ...newBar, is_active: true });
@@ -642,7 +729,7 @@ export default function GlobalSettings() {
     setBars(prev => prev.filter(b => b.id !== id));
   };
 
-  // ── Products ──────────────────────────────────────────────────────────────
+  // ── Products CRUD ─────────────────────────────────────────────────────────
   const addProduct = async () => {
     if (!newProduct.name.trim()) return;
     await db.Product.create({ ...newProduct, selling_price: parseFloat(newProduct.selling_price) || 0 });
@@ -659,29 +746,28 @@ export default function GlobalSettings() {
     setProducts(prev => prev.filter(p => p.id !== id));
   };
 
-  // ── Users ─────────────────────────────────────────────────────────────────
+  // ── Users CRUD ────────────────────────────────────────────────────────────
   const addUser = async () => {
     if (!newUser.name.trim() || !newUser.pin.trim()) return;
     const created = await db.AppUser.create({ ...newUser, bar_id: newUser.bar_id || null });
     await refreshUsers();
-    if (created && newUserFestivalIds.length > 0) {
-      await syncUserFestivals(created.id, newUserFestivalIds);
-    }
+    if (created && newUserFestivalIds.length > 0) await syncUserFestivals(created.id, newUserFestivalIds);
     setNewUser({ name: "", pin: "", role: "bar_leader", bar_id: "" });
     setNewUserFestivalIds([]);
   };
-
   const updateUser = async (id, data, newFestivalIds) => {
     await db.AppUser.update(id, data);
     await refreshUsers();
     await syncUserFestivals(id, newFestivalIds);
   };
-
   const deleteUser = async (id) => {
     if (!window.confirm("Eliminar este utilizador?")) return;
     await db.AppUser.delete(id);
     setUsers(prev => prev.filter(u => u.id !== id));
   };
+
+  // ── Derived data ──────────────────────────────────────────────────────────
+  const globalBars = bars.filter(b => !b.festival_id);
 
   return (
     <div className="min-h-screen bg-[#F7F7F5]">
@@ -717,7 +803,7 @@ export default function GlobalSettings() {
                     <Plus className="w-4 h-4" /> Criar Novo Festival
                   </button>
                 ) : (
-                  <div className="bg-white rounded-2xl border border-neutral-100 shadow-sm p-5">
+                  <div className="bg-neutral-50 rounded-2xl border border-neutral-200 p-5">
                     <div className="text-xs font-semibold uppercase tracking-widest text-neutral-400 mb-4">Novo Festival</div>
                     {smartSuggestions?.suggestions?.length > 0 && (
                       <div className="mb-4 p-4 bg-blue-50 border border-blue-200 rounded-xl text-sm">
@@ -732,31 +818,44 @@ export default function GlobalSettings() {
                         <div className="text-xs text-blue-600 mt-2">Usa estas quantidades como stock inicial nos armazéns.</div>
                       </div>
                     )}
-                    <FestivalForm bars={bars} products={products} users={users}
+                    <FestivalFormNew
+                      allProducts={products}
+                      existingBars={[]}
                       existingWarehouses={[]}
                       saving={savingFestival}
                       suggestedName={smartSuggestions?.name}
                       onSave={handleCreateFestival}
-                      onCancel={() => { setCreatingFestival(false); setSmartSuggestions(null); }} />
+                      onCancel={() => { setCreatingFestival(false); setSmartSuggestions(null); }}
+                    />
                   </div>
                 )}
-                {festivals.map(f => (
-                  <FestivalItem key={f.id} festival={f} bars={bars} products={products} users={users}
-                    existingWarehouses={warehouses.filter(w => w.festival_id === f.id)}
-                    onUpdate={handleUpdateFestival} onDelete={handleDeleteFestival}
-                    onClose={handleCloseFestival} onReopen={handleReopenFestival} />
-                ))}
+                {festivals.map(f => {
+                  const festBars = bars.filter(b => b.festival_id === f.id).length > 0
+                    ? bars.filter(b => b.festival_id === f.id)
+                    : bars.filter(b => (f.bar_ids || []).includes(b.id));
+                  return (
+                    <FestivalItem key={f.id} festival={f}
+                      allProducts={products}
+                      existingBars={festBars}
+                      existingWarehouses={warehouses.filter(w => w.festival_id === f.id)}
+                      onUpdate={handleUpdateFestival}
+                      onDelete={handleDeleteFestival}
+                      onClose={handleCloseFestival}
+                      onReopen={handleReopenFestival}
+                    />
+                  );
+                })}
                 {festivals.length === 0 && !creatingFestival && (
                   <div className="text-center py-10 text-neutral-300 text-sm">Nenhum festival criado ainda</div>
                 )}
               </div>
             )}
 
-            {/* ── Bares ── */}
+            {/* ── Bares globais ── */}
             {tab === "bares" && (
               <div>
                 <div className="bg-white rounded-2xl border border-neutral-100 p-5 mb-5 shadow-sm">
-                  <div className="text-xs font-semibold uppercase tracking-widest text-neutral-400 mb-3">Adicionar Novo Bar</div>
+                  <div className="text-xs font-semibold uppercase tracking-widest text-neutral-400 mb-3">Adicionar Bar Global</div>
                   <div className="grid grid-cols-2 gap-3">
                     {[["name","Nome *"], ["leader_name","Responsável"], ["leader_email","Email"], ["location","Localização"]].map(([k,l]) => (
                       <input key={k} type="text" placeholder={l} value={newBar[k]}
@@ -770,8 +869,13 @@ export default function GlobalSettings() {
                   </button>
                 </div>
                 <div className="space-y-3">
-                  {bars.map(b => <BarCard key={b.id} bar={b} onUpdate={updateBar} onDelete={deleteBar} />)}
-                  {bars.length === 0 && <div className="text-center py-10 text-neutral-300 text-sm">Nenhum bar criado ainda</div>}
+                  {globalBars.map(b => <BarCard key={b.id} bar={b} onUpdate={updateBar} onDelete={deleteBar} />)}
+                  {globalBars.length === 0 && (
+                    <div className="text-center py-10 text-neutral-300 text-sm">
+                      Nenhum bar global criado.<br />
+                      <span className="text-xs">Os bares específicos de festival são criados dentro de cada festival.</span>
+                    </div>
+                  )}
                 </div>
               </div>
             )}
